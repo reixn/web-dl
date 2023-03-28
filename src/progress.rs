@@ -80,7 +80,7 @@ pub trait ItemContainerProg {
     type FetchRep<'a>: FetchProg
     where
         Self: 'a;
-    fn start_fetch<I: Display>(&self) -> Self::FetchRep<'_>;
+    fn start_fetch(&self) -> Self::FetchRep<'_>;
 
     type ItemsRep<'a>: ItemsProg
     where
@@ -101,7 +101,7 @@ pub trait Reporter: Progress {
     fn start_item_container<I: Display>(
         &self,
         kind: &str,
-        id: &I,
+        id: I,
         item_kind: &str,
     ) -> Self::ItemContainerRep<'_>;
 }

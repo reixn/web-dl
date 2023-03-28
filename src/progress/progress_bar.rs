@@ -203,7 +203,7 @@ impl<'a> ItemsProg for SubProgress<'a> {
 
 impl<'a> ItemContainerProg for SubWrapper<'a> {
     type FetchRep<'b> = SubProgress<'b> where Self:'a+'b;
-    fn start_fetch<I: Display>(&self) -> Self::FetchRep<'_> {
+    fn start_fetch(&self) -> Self::FetchRep<'_> {
         SubProgress {
             multi_progress: self.0,
             progress_bar: self.0.add(ProgressBar::new_spinner().with_message("fetching")),
@@ -264,7 +264,7 @@ impl Reporter for ProgressReporter {
     fn start_item_container<I: Display>(
         &self,
         kind: &str,
-        id: &I,
+        id: I,
         item_kind: &str,
     ) -> Self::ItemContainerRep<'_> {
         self.progress_bar.inc(1);

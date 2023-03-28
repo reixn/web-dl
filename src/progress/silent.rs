@@ -81,7 +81,7 @@ impl ItemsProg for Silent {
 }
 impl ItemContainerProg for Silent {
     type FetchRep<'a> = Silent;
-    fn start_fetch<I: Display>(&self) -> Self::FetchRep<'_> {
+    fn start_fetch(&self) -> Self::FetchRep<'_> {
         Silent
     }
 
@@ -104,7 +104,7 @@ impl Reporter for Silent {
     fn start_item_container<I: Display>(
         &self,
         _: &str,
-        _: &I,
+        _: I,
         _: &str,
     ) -> Self::ItemContainerRep<'_> {
         Silent
