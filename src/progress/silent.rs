@@ -44,6 +44,7 @@ impl CommentsProg for Silent {
     fn start_comment<I: Display>(&mut self, _: I) -> Self::CommentRep<'_> {
         Silent
     }
+    fn skip_comment(&mut self) {}
 }
 impl CommentTreeProg for Silent {
     type FetchRep<'a> = Silent;
@@ -78,6 +79,7 @@ impl ItemsProg for Silent {
     fn start_item<I: Display>(&mut self, _: &str, _: I) -> Self::ItemRep<'_> {
         Silent
     }
+    fn skip_item(&mut self) {}
 }
 impl ItemContainerProg for Silent {
     type FetchRep<'a> = Silent;

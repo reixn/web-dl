@@ -41,6 +41,7 @@ pub trait CommentsProg: Progress {
         Self: 'a;
 
     fn start_comment<I: Display>(&mut self, id: I) -> Self::CommentRep<'_>;
+    fn skip_comment(&mut self);
 }
 pub trait CommentTreeProg {
     type FetchRep<'a>: FetchProg
@@ -75,6 +76,7 @@ pub trait ItemsProg: Progress {
     where
         Self: 'a;
     fn start_item<I: Display>(&mut self, kind: &str, id: I) -> Self::ItemRep<'_>;
+    fn skip_item(&mut self);
 }
 pub trait ItemContainerProg {
     type FetchRep<'a>: FetchProg

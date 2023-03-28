@@ -263,12 +263,24 @@ impl Comment {
         }
         {
             let mut child_prog = prog.start_comments(ret.len() as u64);
+            let mut count = 0;
             for i in ret.iter_mut() {
-                let prog = child_prog.start_comment(&i.info.id);
                 let urls = i.content.image_urls();
-                i.content
-                    .fetch_images(client, &mut prog.start_images(urls.len() as u64), urls)
-                    .await;
+                if !urls.is_empty() {
+                    let prog = child_prog.start_comment(&i.info.id);
+                    i.content
+                        .fetch_images(client, &mut prog.start_images(urls.len() as u64), urls)
+                        .await;
+                    count += 1;
+                } else {
+                    child_prog.skip_comment()
+                }
+                if count == 40 {
+                    use progress::Progress;
+                    let _sleep = child_prog.start_sleep(client.request_interval);
+                    tokio::time::sleep(client.request_interval).await;
+                    count = 0;
+                }
             }
         }
         Ok(ret.into_iter().collect())

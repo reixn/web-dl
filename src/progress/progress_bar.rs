@@ -142,6 +142,10 @@ impl<'a> CommentsProg for SubProgress<'a> {
             .set_message(format!("processing comment {}", id));
         SubWrapper(self.multi_progress)
     }
+    fn skip_comment(&mut self) {
+        self.progress_bar.inc(1);
+        self.progress_bar.set_message("processing comment");
+    }
 }
 impl<'a> CommentTreeProg for SubWrapper<'a> {
     type FetchRep<'b> = SubProgress<'b> where Self:'a+'b;
@@ -198,6 +202,10 @@ impl<'a> ItemsProg for SubProgress<'a> {
         self.progress_bar
             .set_message(format!("processing {} {}", kind, id));
         SubWrapper(self.multi_progress)
+    }
+    fn skip_item(&mut self) {
+        self.progress_bar.inc(1);
+        self.progress_bar.set_message("processing");
     }
 }
 
