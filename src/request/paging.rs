@@ -67,10 +67,7 @@ impl Client {
             None => None,
         });
         prog.inc(ret.len() as u64);
-        {
-            let _sleep_prog = prog.start_sleep(self.request_interval);
-            tokio::time::sleep(self.request_interval).await;
-        }
+        prog.sleep(self.request_interval).await;
         while let Some(Paging {
             is_end: false,
             next,
@@ -86,9 +83,7 @@ impl Client {
             prog.inc(pd.data.len() as u64);
             ret.append(&mut pd.data);
             paging = pd.paging;
-
-            let _sleep_prog = prog.start_sleep(self.request_interval);
-            tokio::time::sleep(self.request_interval).await;
+            prog.sleep(self.request_interval).await;
         }
         Ok(ret)
     }

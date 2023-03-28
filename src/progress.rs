@@ -2,10 +2,7 @@ use std::fmt::Display;
 
 pub trait Progress {
     fn suspend<F: FnOnce() -> ()>(&self, f: F);
-    type SleepProg<'a>: Progress
-    where
-        Self: 'a;
-    fn start_sleep(&self, duration: std::time::Duration) -> Self::SleepProg<'_>;
+    async fn sleep(&self, duration: std::time::Duration);
 }
 pub trait FetchProg: Progress {
     fn set_count(&mut self, count: Option<u64>);

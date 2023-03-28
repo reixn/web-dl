@@ -6,9 +6,8 @@ impl Progress for Silent {
     fn suspend<F: FnOnce() -> ()>(&self, f: F) {
         f()
     }
-    type SleepProg<'a> = Silent;
-    fn start_sleep(&self, _: std::time::Duration) -> Self::SleepProg<'_> {
-        Silent
+    async fn sleep(&self, duration: std::time::Duration) {
+        tokio::time::sleep(duration).await
     }
 }
 impl FetchProg for Silent {

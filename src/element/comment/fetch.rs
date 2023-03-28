@@ -277,8 +277,7 @@ impl Comment {
                 }
                 if count == 40 {
                     use progress::Progress;
-                    let _sleep = child_prog.start_sleep(client.request_interval);
-                    tokio::time::sleep(client.request_interval).await;
+                    child_prog.sleep(client.request_interval).await;
                     count = 0;
                 }
             }

@@ -19,7 +19,7 @@ impl<'a> Drop for SubProgress<'a> {
         self.multi_progress.remove(&self.progress_bar);
     }
 }
-fn start_sleep<'a>(multi_progress:&'a MultiProgress, duration:std::time::Duration) -> SubProgress<'a> {
+async fn start_sleep<'a>(multi_progress:&'a MultiProgress, duration:std::time::Duration)  {
     let pb = multi_progress.add(
         ProgressBar::new_spinner().with_style(
             ProgressStyle::default_spinner()
@@ -34,18 +34,14 @@ fn start_sleep<'a>(multi_progress:&'a MultiProgress, duration:std::time::Duratio
         ),
     );
     pb.enable_steady_tick(TICK_INTERVAL);
-    SubProgress {
-        multi_progress: multi_progress,
-        progress_bar: pb,
-    }
+   tokio::time::sleep(duration).await
 }
 impl<'a> Progress for SubProgress<'a> {
     fn suspend<F: FnOnce() -> ()>(&self, f: F) {
         self.multi_progress.suspend(f)
     }
-    type SleepProg<'b> = SubProgress<'b> where Self:'a+'b;
-    fn start_sleep(&self, duration: std::time::Duration) -> Self::SleepProg<'_> {
-        start_sleep(self.multi_progress, duration)
+    async fn sleep(&self, duration: std::time::Duration) {
+        start_sleep(self.multi_progress, duration).await
     }
 }
 impl<'a> FetchProg for SubProgress<'a> {
@@ -234,9 +230,8 @@ pub struct ProgressReporter {
     progress_bar: ProgressBar,
 }
 impl Progress for ProgressReporter {
-    type SleepProg<'a> = SubProgress<'a> ;
-    fn start_sleep(&self, duration: std::time::Duration) -> Self::SleepProg<'_> {
-        start_sleep(&self.multi_progress, duration)
+    async fn sleep(&self, duration: std::time::Duration)  {
+        start_sleep(&self.multi_progress, duration).await
     }
     fn suspend<F: FnOnce() -> ()>(&self, f: F) {
         self.multi_progress.suspend(f)
