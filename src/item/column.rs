@@ -138,18 +138,22 @@ impl super::Item for Column {
         &mut self,
         client: &crate::request::Client,
         prog: &P,
-    ) {
+    ) -> bool {
         use crate::progress::ImagesProg;
         let url_i = self.intro.image_urls();
         let url_d = self.description.image_urls();
         let mut prog = prog.start_images((url_i.len() + url_d.len()) as u64 + 1);
-        match &mut self.info.image {
-            Some(i) => i.fetch(client, &mut prog).await,
-            None => prog.skip(),
-        }
-        self.intro.fetch_images(client, &mut prog, url_i).await;
-        self.description
-            .fetch_images(client, &mut prog, url_d)
-            .await;
+        self.intro.fetch_images(client, &mut prog, url_i).await
+            | self
+                .description
+                .fetch_images(client, &mut prog, url_d)
+                .await
+            | match &mut self.info.image {
+                Some(i) => i.fetch(client, &mut prog).await,
+                None => {
+                    prog.skip();
+                    false
+                }
+            }
     }
 }

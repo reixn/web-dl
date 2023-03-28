@@ -158,7 +158,11 @@ impl<'de> Deserialize<'de> for FromRaw<Image> {
 }
 
 impl Image {
-    pub async fn fetch<P: progress::ImagesProg>(&mut self, client: &Client, images_prog: &mut P) {
+    pub async fn fetch<P: progress::ImagesProg>(
+        &mut self,
+        client: &Client,
+        images_prog: &mut P,
+    ) -> bool {
         match self {
             Image::Url(u) => {
                 let url = match Url::parse(u.as_str()) {
@@ -166,7 +170,7 @@ impl Image {
                     Err(e) => {
                         images_prog.suspend(|| log::warn!("failed to parse url {}: {}", u, e));
                         images_prog.skip();
-                        return;
+                        return false;
                     }
                 };
                 let mut prog = images_prog.start_image(&url);
@@ -174,8 +178,12 @@ impl Image {
                     Ok(r) => *self = Self::Ref(r),
                     Err(e) => prog.suspend(|| log::warn!("failed to fetch image {}", e)),
                 }
+                true
             }
-            Image::Ref(_) => images_prog.skip(),
+            Image::Ref(_) => {
+                images_prog.skip();
+                false
+            }
         }
     }
     pub fn load_data<C: Display>(&mut self, path: &PathBuf, context: C) -> storable::Result<()> {

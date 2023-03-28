@@ -133,10 +133,10 @@ impl super::Item for Collection {
         &mut self,
         client: &crate::request::Client,
         prog: &P,
-    ) {
+    ) -> bool {
         let u = self.description.image_urls();
         self.description
             .fetch_images(client, &mut prog.start_images(u.len() as u64), u)
-            .await;
+            .await
     }
 }

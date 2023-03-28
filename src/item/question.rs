@@ -140,10 +140,10 @@ impl super::Item for Question {
         &mut self,
         client: &crate::request::Client,
         prog: &P,
-    ) {
+    ) -> bool {
         let u = self.content.image_urls();
         self.content
             .fetch_images(client, &mut prog.start_images(u.len() as u64), u)
-            .await;
+            .await
     }
 }

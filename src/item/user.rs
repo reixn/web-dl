@@ -130,12 +130,12 @@ impl super::Item for User {
         &mut self,
         client: &crate::request::Client,
         prog: &P,
-    ) {
+    ) -> bool {
         let mut p = prog.start_images(1 + if self.info.cover.is_some() { 1 } else { 0 });
-        self.info.avatar.fetch(client, &mut p).await;
-        match &mut self.info.cover {
-            Some(c) => c.fetch(client, &mut p).await,
-            None => (),
-        }
+        self.info.avatar.fetch(client, &mut p).await
+            | match &mut self.info.cover {
+                Some(c) => c.fetch(client, &mut p).await,
+                None => false,
+            }
     }
 }

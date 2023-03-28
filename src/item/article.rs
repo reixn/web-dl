@@ -120,7 +120,9 @@ impl Article {
             .title_image
             .0;
         match &mut self.info.cover {
-            Some(c) => c.fetch(client, &mut prog.start_images(1)).await,
+            Some(c) => {
+                c.fetch(client, &mut prog.start_images(1)).await;
+            }
             None => (),
         }
         Ok(())
@@ -177,14 +179,13 @@ impl super::Item for Article {
         .await?;
         Ok(())
     }
-    async fn get_images<P: progress::ItemProg>(&mut self, client: &Client, prog: &P) {
-        use progress::ImagesProg;
+    async fn get_images<P: progress::ItemProg>(&mut self, client: &Client, prog: &P) -> bool {
         let u = self.content.image_urls();
         let mut prog = prog.start_images(u.len() as u64 + 1);
-        match &mut self.info.cover {
-            Some(c) => c.fetch(client, &mut prog).await,
-            None => prog.skip(),
-        }
-        self.content.fetch_images(client, &mut prog, u).await;
+        self.content.fetch_images(client, &mut prog, u).await
+            | match &mut self.info.cover {
+                Some(c) => c.fetch(client, &mut prog).await,
+                None => false,
+            }
     }
 }

@@ -220,7 +220,7 @@ impl super::Item for Pin {
         &mut self,
         client: &crate::request::Client,
         prog: &P,
-    ) {
+    ) -> bool {
         let self_url = self.body.content.content_html.image_urls();
         let repin_url = self
             .repin
@@ -231,15 +231,15 @@ impl super::Item for Pin {
             .content
             .content_html
             .fetch_images(client, &mut p, self_url)
-            .await;
-        match &mut self.repin {
-            Some(b) => {
-                b.content
-                    .content_html
-                    .fetch_images(client, &mut p, repin_url)
-                    .await
+            .await
+            | match &mut self.repin {
+                Some(b) => {
+                    b.content
+                        .content_html
+                        .fetch_images(client, &mut p, repin_url)
+                        .await
+                }
+                None => false,
             }
-            None => (),
-        }
     }
 }

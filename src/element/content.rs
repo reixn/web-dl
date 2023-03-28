@@ -180,7 +180,12 @@ impl Content {
         client: &Client,
         images_prog: &mut P,
         urls: HashSet<Url>,
-    ) {
-        self.info.images = fetch_images_iter(client, images_prog, urls.into_iter()).await
+    ) -> bool {
+        if urls.is_empty() {
+            false
+        } else {
+            self.info.images = fetch_images_iter(client, images_prog, urls.into_iter()).await;
+            true
+        }
     }
 }

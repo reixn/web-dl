@@ -50,7 +50,7 @@ pub trait Fetchable: HasId {
 pub trait Item: Sized + HasId + Storable {
     type Reply: for<'de> Deserialize<'de>;
     fn from_reply(reply: Self::Reply, raw_data: RawData) -> Self;
-    async fn get_images<P: progress::ItemProg>(&mut self, client: &Client, prog: &P);
+    async fn get_images<P: progress::ItemProg>(&mut self, client: &Client, prog: &P) -> bool;
     async fn get_comments<P: progress::ItemProg>(
         &mut self,
         client: &Client,
