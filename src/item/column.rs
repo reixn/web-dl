@@ -1,6 +1,7 @@
 use crate::{
-    element::{Author, Content, Image},
+    element::{Author, Content},
     id,
+    media::Image,
     meta::Version,
     raw_data::{FromRaw, RawData},
     store::storable,
@@ -81,6 +82,13 @@ impl storable::Storable for Column {
         store_object_to(&self.description, path, "description")
     }
 }
+has_image!(Column {
+    info: flatten {
+        image: image(optional)
+    },
+    intro: image(),
+    description: image()
+});
 
 impl super::Fetchable for Column {
     async fn fetch<'a>(

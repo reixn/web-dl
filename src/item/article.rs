@@ -1,10 +1,10 @@
 use crate::{
     element::{
         comment::{self, Comment},
-        image::Image,
         Author, Content,
     },
     id,
+    media::Image,
     meta::Version,
     progress,
     raw_data::{FromRaw, RawData},
@@ -62,16 +62,7 @@ impl storable::Storable for Article {
         let path = path.as_ref().to_path_buf();
         Ok(Self {
             version: Version::load(&path)?,
-            info: {
-                let mut l: ArticleInfo = load_yaml(&path, ARTICLE_INFO_FILE)?;
-                if load_opt.load_img {
-                    match &mut l.cover {
-                        Some(c) => c.load_data(&path, "cover")?,
-                        None => (),
-                    }
-                }
-                l
-            },
+            info: load_yaml(&path, ARTICLE_INFO_FILE)?,
             raw_data: RawData::load_if(&path, load_opt)?,
             content: load_fixed_id_obj(path.clone(), load_opt, "content")?,
             comments: load_fixed_id_obj(path, load_opt, "comments")?,
@@ -82,15 +73,18 @@ impl storable::Storable for Article {
         let path = path.as_ref().to_path_buf();
         self.version.store(&path)?;
         store_yaml(&self.info, &path, ARTICLE_INFO_FILE)?;
-        match &self.info.cover {
-            Some(c) => c.store_data(&path, "cover")?,
-            None => (),
-        }
         RawData::store_option(&self.raw_data, &path)?;
         store_object(&self.content, path.clone(), "content")?;
         store_object(&self.comments, path, "comments")
     }
 }
+has_image!(Article {
+    info: flatten {
+        cover: image(optional)
+    },
+    content: image(),
+    comments: image()
+});
 
 impl Article {
     async fn send_request(

@@ -96,6 +96,11 @@ impl storable::Storable for PinBody {
         store_object(&self.content, path, "content")
     }
 }
+has_image!(PinBody {
+    content: flatten {
+        content_html: image()
+    }
+});
 
 pub const VERSION: Version = Version { major: 1, minor: 0 };
 
@@ -149,6 +154,11 @@ impl storable::Storable for Pin {
         store_object(&self.comments, path, "comments")
     }
 }
+has_image!(Pin {
+    body: image(),
+    repin: image(optional),
+    comments: image()
+});
 impl super::Fetchable for Pin {
     async fn fetch<'a>(
         client: &crate::request::Client,

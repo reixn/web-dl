@@ -9,18 +9,15 @@
 #![feature(maybe_uninit_slice)]
 #![feature(maybe_uninit_write_slice)]
 
+#[macro_use]
+pub mod media;
+
 pub mod element {
     pub mod author;
     pub mod comment;
     pub mod content;
-    pub mod image;
 
-    pub use self::{
-        author::Author,
-        comment::Comment,
-        content::Content,
-        image::{Image, ImageRef},
-    };
+    pub use self::{author::Author, comment::Comment, content::Content};
 }
 pub(crate) mod bytes;
 pub mod id {
@@ -41,6 +38,7 @@ pub mod id {
         fn id(&self) -> Self::Id<'_>;
     }
 }
+
 pub mod item;
 pub mod progress;
 pub mod raw_data;

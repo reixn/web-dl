@@ -82,6 +82,7 @@ impl storable::Storable for Comment {
         store_object(&self.content, path, "content")
     }
 }
+has_image!(Comment { content: image() });
 
 #[derive(Debug)]
 pub struct CommentTree {

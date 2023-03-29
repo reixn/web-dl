@@ -72,6 +72,11 @@ impl storable::Storable for Question {
         store_object(&self.comments, path, "comments")
     }
 }
+has_image!(Question {
+    content: image(),
+    comments: image()
+});
+
 impl super::Fetchable for Question {
     async fn fetch<'a>(
         client: &crate::request::Client,

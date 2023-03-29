@@ -1,6 +1,6 @@
 use crate::{
-    element::image::{fetch_images_iter, ImageRef},
     id::{self, HasId},
+    media::{fetch_images_iter, ImageRef},
     meta::Version,
     progress,
     raw_data::FromRaw,
@@ -71,24 +71,11 @@ impl Default for Content {
 
 const CONTENT_INFO_FILE: &str = "content_info.yaml";
 const RAW_HTML_FILE: &str = "raw_html.html";
-const IMAGES_DIR: &str = "images";
 impl storable::Storable for Content {
-    fn load<P: AsRef<Path>>(path: P, load_opt: storable::LoadOpt) -> Result<Self, storable::Error> {
+    fn load<P: AsRef<Path>>(path: P, _: storable::LoadOpt) -> Result<Self, storable::Error> {
         use storable::*;
         let path = path.as_ref().to_path_buf();
-        let info = {
-            let mut info: ContentInfo = load_yaml(&path, CONTENT_INFO_FILE)?;
-            if load_opt.load_img && !info.is_empty {
-                let mut path = path.clone();
-                path.push(IMAGES_DIR);
-                for i in &mut info.images {
-                    i.load_data(&path).map_err(|e| {
-                        Error::load_error("images", ErrorSource::Chained(Box::new(e)))
-                    })?;
-                }
-            }
-            info
-        };
+        let info: ContentInfo = load_yaml(&path, CONTENT_INFO_FILE)?;
         Ok(Content {
             version: Version::load(&path)?,
             raw_html: if info.is_empty {
@@ -101,25 +88,21 @@ impl storable::Storable for Content {
     }
     fn store<P: AsRef<Path>>(&self, path: P) -> Result<(), storable::Error> {
         use storable::*;
-        let mut path = path.as_ref().to_path_buf();
+        let path = path.as_ref().to_path_buf();
         self.version.store(&path)?;
         store_yaml(&self.info, &path, CONTENT_INFO_FILE)?;
         match &self.raw_html {
             Some(h) => write_file(h, &path, RAW_HTML_FILE)?,
             None => (),
         }
-
-        if !self.info.is_empty {
-            path.push(IMAGES_DIR);
-            create_dir_missing(&path, "image dir")?;
-            for i in self.info.images.iter() {
-                i.store_data(&path)
-                    .map_err(|e| Error::store_error("images", ErrorSource::Chained(Box::new(e))))?;
-            }
-        }
         Ok(())
     }
 }
+has_image!(Content {
+    info: flatten {
+        images: image(no_chain)
+    }
+});
 impl Content {
     pub(crate) fn image_urls(&self) -> HashSet<Url> {
         let html = match &self.raw_html {

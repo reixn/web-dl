@@ -79,6 +79,10 @@ impl storable::Storable for Answer {
         store_object(&self.comments, path, "comments")
     }
 }
+has_image!(Answer {
+    content: image(),
+    comments: image()
+});
 
 #[derive(Deserialize)]
 struct ReplyQuestion {

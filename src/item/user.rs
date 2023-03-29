@@ -1,7 +1,8 @@
 pub use crate::element::author::{UserId, UserType};
 use crate::{
-    element::{Content, Image},
+    element::Content,
     id,
+    media::Image,
     meta::Version,
     raw_data::{FromRaw, RawData},
     store::storable,
@@ -45,17 +46,7 @@ impl storable::Storable for User {
         let path = path.as_ref().to_path_buf();
         Ok(Self {
             version: Version::load(&path)?,
-            info: {
-                let mut info: UserInfo = load_yaml(&path, USER_INFO_FILE)?;
-                if load_opt.load_img {
-                    info.avatar.load_data(&path, "avatar")?;
-                    match &mut info.cover {
-                        Some(c) => c.load_data(&path, "cover")?,
-                        None => (),
-                    }
-                }
-                info
-            },
+            info: load_yaml(&path, USER_INFO_FILE)?,
             raw_data: RawData::load_if(&path, load_opt)?,
             description: load_fixed_id_obj(path, load_opt, "description")?,
         })
@@ -65,15 +56,18 @@ impl storable::Storable for User {
         let path = path.as_ref().to_path_buf();
         self.version.store(&path)?;
         store_yaml(&self.info, &path, USER_INFO_FILE)?;
-        self.info.avatar.store_data(&path, "avatar")?;
-        match &self.info.cover {
-            Some(c) => c.store_data(&path, "cover")?,
-            None => (),
-        }
         RawData::store_option(&self.raw_data, &path)?;
         store_object(&self.description, path, "description")
     }
 }
+has_image!(User {
+    info: flatten {
+        avatar: image(),
+        cover: image(optional)
+    },
+    description: image()
+});
+
 impl super::Fetchable for User {
     async fn fetch<'a>(
         client: &crate::request::Client,

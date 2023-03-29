@@ -1,42 +1,94 @@
 use crate::{
-    bytes,
+    id,
     progress::{self, Progress},
     raw_data::FromRaw,
     request::Client,
-    store::storable,
 };
 use mime2ext::mime2ext;
 use mime_classifier::{ApacheBugFlag, LoadContext, MimeClassifier, NoSniffFlag};
 use reqwest::Url;
 use serde::{de, Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::{fmt::Display, mem::MaybeUninit, path::PathBuf};
+use std::{fmt::Display, mem::MaybeUninit, rc::Rc};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "algo", content = "hash")]
-pub enum HashDigest {
-    #[serde(rename = "sha256")]
-    Sha256(#[serde(with = "bytes")] [u8; 32]),
+mod hash;
+pub use hash::HashDigest;
+
+mod store;
+pub use store::Error as StoreError;
+pub use store::{Loader, RefSet, Storer};
+
+pub trait HasImage {
+    fn load_images(&mut self, loader: &mut Loader) -> Result<(), StoreError>;
+    fn store_images(&self, storer: &mut Storer) -> Result<(), StoreError>;
+    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut RefSet<'b>)
+    where
+        'b: 'a;
 }
+
+impl<I: id::HasId + HasImage> HasImage for Vec<I> {
+    fn load_images(&mut self, loader: &mut Loader) -> Result<(), store::Error> {
+        for i in self.iter_mut() {
+            i.load_images(loader)
+                .map_err(|e| store::Error::chained(i.id(), e))?;
+        }
+        Ok(())
+    }
+    fn store_images(&self, storer: &mut Storer) -> Result<(), store::Error> {
+        for i in self.iter() {
+            i.store_images(storer)
+                .map_err(|e| store::Error::chained(i.id(), e))?;
+        }
+        Ok(())
+    }
+    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut store::RefSet<'b>)
+    where
+        'b: 'a,
+    {
+        for i in self {
+            i.image_refs(ref_set)
+        }
+    }
+}
+
+#[macro_use]
+mod derive_macro;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageRef {
-    pub name: String,
     pub url: String,
     pub hash: HashDigest,
+    pub extension: String,
     #[serde(skip)]
-    pub data: Option<Vec<u8>>,
+    pub data: Option<Rc<Vec<u8>>>,
 }
-impl ImageRef {
-    pub fn store_data(&self, path: &PathBuf) -> storable::Result<()> {
-        match self.data {
-            Some(ref d) => storable::write_file(d, path, &self.name),
+impl Display for ImageRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("image {:#?}", self.hash))
+    }
+}
+impl id::HasId for ImageRef {
+    const TYPE: &'static str = "image";
+    type Id<'a> = &'a Self;
+    fn id(&self) -> Self::Id<'_> {
+        self
+    }
+}
+impl HasImage for ImageRef {
+    fn load_images(&mut self, loader: &mut store::Loader) -> Result<(), store::Error> {
+        self.data = Some(loader.load(&self.hash, self.extension.as_str())?);
+        Ok(())
+    }
+    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut store::RefSet<'b>)
+    where
+        'b: 'a,
+    {
+        ref_set.add_root(&self.hash, self.extension.as_str());
+    }
+    fn store_images(&self, storer: &mut store::Storer) -> Result<(), store::Error> {
+        match &self.data {
+            Some(d) => storer.store(&self.hash, self.extension.as_str(), d),
             None => Ok(()),
         }
-    }
-    pub fn load_data(&mut self, path: &PathBuf) -> storable::Result<()> {
-        self.data = Some(storable::read_file(path, &self.name)?);
-        Ok(())
     }
 }
 
@@ -45,6 +97,7 @@ pub async fn fetch_image<P: progress::ImageProg>(
     image_prog: &mut P,
     url: Url,
 ) -> reqwest::Result<ImageRef> {
+    use sha2::Digest;
     let url_str = url.to_string();
     log::debug!("fetching image {}", &url_str);
     let mut resp = client.http_client.get(url).send().await?;
@@ -53,7 +106,7 @@ pub async fn fetch_image<P: progress::ImageProg>(
         Some(sz) => Vec::with_capacity(sz as usize),
         None => Vec::new(),
     };
-    let mut dig = Sha256::new();
+    let mut dig = sha2::Sha256::new();
     while let Some(s) = resp.chunk().await? {
         image_prog.inc(s.len() as u64);
         ret.extend_from_slice(&s);
@@ -70,21 +123,18 @@ pub async fn fetch_image<P: progress::ImageProg>(
         base16::encode_lower(&hsh)
     );
     Ok(ImageRef {
-        name: format!(
-            "sha256-{}.{}",
-            base16::encode_lower(hsh.as_ref()),
-            mime2ext(MimeClassifier::new().classify(
-                LoadContext::Image,
-                NoSniffFlag::On,
-                ApacheBugFlag::On,
-                &None,
-                &ret,
-            ))
-            .unwrap_or("unknown")
-        ),
         url: url_str,
         hash: HashDigest::Sha256(hsh),
-        data: Some(ret),
+        extension: mime2ext(MimeClassifier::new().classify(
+            LoadContext::Image,
+            NoSniffFlag::On,
+            ApacheBugFlag::On,
+            &None,
+            &ret,
+        ))
+        .unwrap_or("unknown")
+        .to_owned(),
+        data: Some(Rc::new(ret)),
     })
 }
 pub async fn fetch_images_iter<I, P>(client: &Client, images_prog: &mut P, imgs: I) -> Vec<ImageRef>
@@ -156,6 +206,29 @@ impl<'de> Deserialize<'de> for FromRaw<Image> {
         FromRaw::<Option<Image>>::deserialize(deserializer).map(|e| FromRaw(e.0.unwrap()))
     }
 }
+impl HasImage for Image {
+    fn load_images(&mut self, loader: &mut store::Loader) -> Result<(), store::Error> {
+        match self {
+            Image::Ref(r) => r.load_images(loader),
+            Image::Url(_) => Ok(()),
+        }
+    }
+    fn store_images(&self, storer: &mut store::Storer) -> Result<(), store::Error> {
+        match self {
+            Image::Ref(r) => r.store_images(storer),
+            Image::Url(_) => Ok(()),
+        }
+    }
+    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut store::RefSet<'b>)
+    where
+        'b: 'a,
+    {
+        match self {
+            Image::Ref(r) => r.image_refs(ref_set),
+            Image::Url(_) => (),
+        }
+    }
+}
 
 impl Image {
     pub async fn fetch<P: progress::ImagesProg>(
@@ -184,22 +257,6 @@ impl Image {
                 images_prog.skip();
                 false
             }
-        }
-    }
-    pub fn load_data<C: Display>(&mut self, path: &PathBuf, context: C) -> storable::Result<()> {
-        match self {
-            Self::Ref(r) => r.load_data(path).map_err(|e| {
-                storable::Error::load_error(context, storable::ErrorSource::Chained(Box::new(e)))
-            }),
-            Self::Url(_) => Ok(()),
-        }
-    }
-    pub fn store_data<C: Display>(&self, path: &PathBuf, context: C) -> storable::Result<()> {
-        match self {
-            Self::Ref(r) => r.store_data(path).map_err(|e| {
-                storable::Error::store_error(context, storable::ErrorSource::Chained(Box::new(e)))
-            }),
-            Self::Url(_) => Ok(()),
         }
     }
 }

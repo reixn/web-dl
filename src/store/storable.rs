@@ -63,7 +63,6 @@ impl Error {
         }
     }
 }
-
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub(crate) fn push_path<P: AsRef<Path>>(path: &PathBuf, name: P) -> PathBuf {
@@ -130,14 +129,10 @@ pub(crate) fn create_dir_missing<P: AsRef<Path>, C: Display>(path: P, context: C
 #[derive(Debug, Clone, Copy)]
 pub struct LoadOpt {
     pub load_raw: bool,
-    pub load_img: bool,
 }
 impl Default for LoadOpt {
     fn default() -> Self {
-        LoadOpt {
-            load_raw: false,
-            load_img: false,
-        }
+        LoadOpt { load_raw: false }
     }
 }
 

@@ -69,6 +69,10 @@ impl storable::Storable for Collection {
         store_object(&self.comments, path, "comments")
     }
 }
+has_image!(Collection {
+    description: image(),
+    comments: image()
+});
 
 impl super::Fetchable for Collection {
     async fn fetch<'a>(
