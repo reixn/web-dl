@@ -1,0 +1,132 @@
+use crate::{
+    element::{Author, Content},
+    meta::Version,
+    raw_data::{FromRaw, RawData},
+};
+use chrono::{DateTime, FixedOffset};
+use serde::{Deserialize, Serialize};
+use std::fmt::Display;
+use web_dl_base::{
+    id::HasId,
+    media::{HasImage, Image},
+    storable::Storable,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ColumnId(pub String);
+impl Display for ColumnId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[store(format = "yaml")]
+pub struct ColumnInfo {
+    pub id: ColumnId,
+    pub title: String,
+    pub author: Author,
+    #[store(has_image)]
+    pub image: Option<Image>,
+    pub created_time: DateTime<FixedOffset>,
+    pub updated_time: DateTime<FixedOffset>,
+}
+
+const VERSION: Version = Version { major: 1, minor: 0 };
+#[derive(Debug, Storable, HasImage)]
+pub struct Column {
+    #[store(path(ext = "yaml"))]
+    pub version: Version,
+    #[store(path(ext = "yaml"), has_image(error = "pass_through"))]
+    pub info: ColumnInfo,
+    #[store(has_image)]
+    pub intro: Content,
+    #[store(has_image)]
+    pub description: Content,
+    #[store(raw_data)]
+    pub raw_data: Option<RawData>,
+}
+
+impl HasId for Column {
+    const TYPE: &'static str = "column";
+    type Id<'a> = &'a ColumnId;
+    fn id(&self) -> Self::Id<'_> {
+        &self.info.id
+    }
+}
+
+impl super::Fetchable for Column {
+    async fn fetch<'a>(
+        client: &crate::request::Client,
+        id: Self::Id<'a>,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        client
+            .http_client
+            .get(format!("https://www.zhihu.com/api/v4/columns/{}", id))
+            .query(&[("include", "intro,created")])
+            .send()
+            .await?
+            .json()
+            .await
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Reply {
+    id: String,
+    title: String,
+    author: FromRaw<Author>,
+    created: FromRaw<DateTime<FixedOffset>>,
+    updated: FromRaw<DateTime<FixedOffset>>,
+    image_url: FromRaw<Option<Image>>,
+    intro: FromRaw<Content>,
+    description: FromRaw<Content>,
+}
+impl super::Item for Column {
+    type Reply = Reply;
+    fn from_reply(reply: Self::Reply, raw_data: RawData) -> Self {
+        Self {
+            version: VERSION,
+            info: ColumnInfo {
+                id: ColumnId(reply.id),
+                title: reply.title,
+                author: reply.author.0,
+                image: reply.image_url.0,
+                created_time: reply.created.0,
+                updated_time: reply.updated.0,
+            },
+            intro: reply.intro.0,
+            description: reply.description.0,
+            raw_data: Some(raw_data),
+        }
+    }
+    async fn get_comments<P: crate::progress::ItemProg>(
+        &mut self,
+        _: &crate::request::Client,
+        _: &P,
+    ) -> Result<(), crate::element::comment::FetchError> {
+        Ok(())
+    }
+    async fn get_images<P: crate::progress::ItemProg>(
+        &mut self,
+        client: &crate::request::Client,
+        prog: &P,
+    ) -> bool {
+        use crate::progress::ImagesProg;
+        let url_i = self.intro.image_urls();
+        let url_d = self.description.image_urls();
+        let mut prog = prog.start_images((url_i.len() + url_d.len()) as u64 + 1);
+        self.intro.fetch_images(client, &mut prog, url_i).await
+            | self
+                .description
+                .fetch_images(client, &mut prog, url_d)
+                .await
+            | match &mut self.info.image {
+                Some(i) => i.fetch(&client.http_client, &mut prog).await,
+                None => {
+                    prog.skip();
+                    false
+                }
+            }
+    }
+}

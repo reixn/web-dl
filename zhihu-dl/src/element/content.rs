@@ -1,0 +1,136 @@
+use crate::{meta::Version, progress, raw_data::FromRaw, request::Client};
+use html5ever::{
+    local_name,
+    tendril::Tendril,
+    tokenizer::{
+        BufferQueue, Tag, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts,
+    },
+};
+use reqwest::Url;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use web_dl_base::{
+    media::{fetch_images_iter, HasImage, ImageRef},
+    storable::Storable,
+};
+
+pub const VERSION: Version = Version { major: 1, minor: 0 };
+
+#[derive(Debug, Clone, Storable, HasImage, Serialize, Deserialize)]
+#[store(format = "yaml")]
+pub struct ContentInfo {
+    pub is_empty: bool,
+    #[store(has_image)]
+    pub images: Vec<ImageRef>,
+}
+
+#[derive(Debug, Clone, Storable, HasImage)]
+pub struct Content {
+    #[store(path(ext = "yaml"))]
+    pub version: Version,
+    #[store(path(ext = "yaml"), has_image(error = "pass_through"))]
+    pub info: ContentInfo,
+    #[store(path(ext = "html"))]
+    pub raw_html: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for FromRaw<Content> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(|d| {
+            FromRaw(Content {
+                version: VERSION,
+                info: ContentInfo {
+                    is_empty: d.is_empty(),
+                    images: Vec::new(),
+                },
+                raw_html: if d.is_empty() { None } else { Some(d) },
+            })
+        })
+    }
+}
+impl Default for Content {
+    fn default() -> Self {
+        Self {
+            version: VERSION,
+            info: ContentInfo {
+                is_empty: true,
+                images: Vec::new(),
+            },
+            raw_html: None,
+        }
+    }
+}
+
+impl Content {
+    pub(crate) fn image_urls(&self) -> HashSet<Url> {
+        let html = match &self.raw_html {
+            Some(h) => h,
+            None => return HashSet::default(),
+        };
+        struct ImageSink(HashSet<Url>);
+        impl TokenSink for ImageSink {
+            type Handle = ();
+            fn process_token(&mut self, token: Token, _: u64) -> TokenSinkResult<Self::Handle> {
+                match token {
+                    Token::TagToken(Tag {
+                        kind: TagKind::StartTag,
+                        name: local_name!("img"),
+                        attrs,
+                        ..
+                    }) => {
+                        let mut url = None;
+                        for i in attrs {
+                            match i.name.local.as_bytes() {
+                                b"data-original" => {
+                                    url = Url::parse(
+                                        std::str::from_utf8(i.value.as_bytes()).unwrap(),
+                                    )
+                                    .ok();
+                                    break;
+                                }
+                                b"src" => {
+                                    url = Url::parse(
+                                        std::str::from_utf8(i.value.as_bytes()).unwrap(),
+                                    )
+                                    .ok();
+                                }
+                                _ => {}
+                            };
+                        }
+                        match url {
+                            Some(u) => {
+                                self.0.insert(u);
+                            }
+                            None => {}
+                        }
+                        TokenSinkResult::Continue
+                    }
+                    _ => TokenSinkResult::Continue,
+                }
+            }
+        }
+        let mut t = Tokenizer::new(ImageSink(HashSet::new()), TokenizerOpts::default());
+        let mut bq = BufferQueue::new();
+        bq.push_back(Tendril::from_slice(html.as_str()));
+        let _ = t.feed(&mut bq);
+        t.end();
+        t.sink.0
+    }
+    pub(crate) async fn fetch_images<P: progress::ImagesProg>(
+        &mut self,
+        client: &Client,
+        images_prog: &mut P,
+        urls: HashSet<Url>,
+    ) -> bool {
+        if urls.is_empty() {
+            false
+        } else {
+            self.info.images =
+                fetch_images_iter(&client.http_client, images_prog, urls.into_iter()).await;
+            true
+        }
+    }
+}
