@@ -118,7 +118,7 @@ pub struct ImageRef {
     pub hash: HashDigest,
     pub extension: String,
     #[serde(skip)]
-    pub data: Option<Rc<Vec<u8>>>,
+    pub data: Option<Rc<[u8]>>,
 }
 impl Display for ImageRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -199,7 +199,7 @@ pub async fn fetch_image<P: progress::ImageProg>(
         ))
         .unwrap_or("unknown")
         .to_owned(),
-        data: Some(Rc::new(ret)),
+        data: Some(Rc::from(ret.into_boxed_slice())),
     })
 }
 pub async fn fetch_images_iter<I, P>(client: &Client, images_prog: &mut P, imgs: I) -> Vec<ImageRef>

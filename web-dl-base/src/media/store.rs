@@ -37,7 +37,7 @@ pub struct Error {
 
 pub struct Loader {
     media_root: PathBuf,
-    load_cache: HashMap<HashDigest, Rc<Vec<u8>>>,
+    load_cache: HashMap<HashDigest, Rc<[u8]>>,
 }
 impl Loader {
     pub fn new<P: AsRef<Path>>(media_root: P) -> Self {
@@ -46,19 +46,19 @@ impl Loader {
             load_cache: HashMap::new(),
         }
     }
-    pub(crate) fn load(
-        &mut self,
-        hash: &HashDigest,
-        extension: &str,
-    ) -> Result<Rc<Vec<u8>>, Error> {
+    pub(crate) fn load(&mut self, hash: &HashDigest, extension: &str) -> Result<Rc<[u8]>, Error> {
         match self.load_cache.entry(hash.clone()) {
             Entry::Occupied(v) => Ok(Rc::clone(v.get())),
             Entry::Vacant(v) => {
                 let p = hash.store_path(&self.media_root, extension);
-                let data = Rc::new(fs::read(&p).map_err(|e| Error {
-                    op: ErrorOp::Read(p.clone()),
-                    source: e,
-                })?);
+                let data = Rc::from(
+                    fs::read(&p)
+                        .map_err(|e| Error {
+                            op: ErrorOp::Read(p.clone()),
+                            source: e,
+                        })?
+                        .into_boxed_slice(),
+                );
                 v.insert(Rc::clone(&data));
                 Ok(data)
             }
@@ -81,7 +81,7 @@ impl Storer {
         &mut self,
         hash: &HashDigest,
         extension: &str,
-        data: &Vec<u8>,
+        data: &[u8],
     ) -> Result<(), Error> {
         match self.store_cache.entry(hash.clone()) {
             Entry::Occupied(mut v) => {
