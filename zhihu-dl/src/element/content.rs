@@ -101,11 +101,8 @@ impl Content {
                                 _ => {}
                             };
                         }
-                        match url {
-                            Some(u) => {
-                                self.0.insert(u);
-                            }
-                            None => {}
+                        if let Some(u) = url {
+                            self.0.insert(u);
                         }
                         TokenSinkResult::Continue
                     }

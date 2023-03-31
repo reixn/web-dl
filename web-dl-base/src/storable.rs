@@ -1,6 +1,5 @@
 use crate::id::HasId;
 use std::{
-    error,
     fmt::Display,
     fs, io,
     path::{Path, PathBuf},
@@ -17,56 +16,50 @@ pub enum IoErrorOp {
     DirEntry,
     Other(&'static str),
 }
+impl Display for IoErrorOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            IoErrorOp::CreateFile => "create file",
+            IoErrorOp::OpenFile => "open file",
+            IoErrorOp::ReadFile => "read file",
+            IoErrorOp::WriteFile => "write file",
+            IoErrorOp::CreateDir => "create directory",
+            IoErrorOp::ReadDir => "read dir",
+            IoErrorOp::DirEntry => "get entry in",
+            IoErrorOp::Other(op) => op,
+        })
+    }
+}
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("failed to {op} {}", path.display())]
     Io {
         op: IoErrorOp,
         path: PathBuf,
+        #[source]
         source: io::Error,
     },
-    Yaml(serde_yaml::Error),
-    Json(serde_json::Error),
+    #[error("failed to process yaml")]
+    Yaml(
+        #[source]
+        #[from]
+        serde_yaml::Error,
+    ),
+    #[error("failed to process json")]
+    Json(
+        #[source]
+        #[from]
+        serde_json::Error,
+    ),
+    #[error("failed to process field {field}")]
     Chained {
         field: String,
+        #[source]
         source: Box<Error>,
     },
 }
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Io { op, path, .. } => f.write_fmt(format_args!(
-                "failed to {} {}",
-                match op {
-                    IoErrorOp::CreateFile => "create file",
-                    IoErrorOp::OpenFile => "open file",
-                    IoErrorOp::ReadFile => "read file",
-                    IoErrorOp::WriteFile => "write file",
-                    IoErrorOp::CreateDir => "create directory",
-                    IoErrorOp::ReadDir => "read dir",
-                    IoErrorOp::DirEntry => "get entry in",
-                    IoErrorOp::Other(op) => op,
-                },
-                path.display()
-            )),
-            Error::Yaml(_) => f.write_str("failed to process yaml"),
-            Error::Json(_) => f.write_str("failed to process json"),
-            Error::Chained { field, .. } => {
-                f.write_fmt(format_args!("failed to process field {}", field))
-            }
-        }
-    }
-}
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            Error::Io { source, .. } => Some(source),
-            Error::Yaml(e) => Some(e),
-            Error::Json(e) => Some(e),
-            Error::Chained { source, .. } => Some(source),
-        }
-    }
-}
+
 pub fn create_dir_missing(path: &Path) -> Result<(), Error> {
     if !path.exists() {
         fs::create_dir_all(path).map_err(|e| Error::Io {
@@ -114,14 +107,9 @@ pub mod macro_export {
     pub use std::{self, convert::AsRef, path::Path, result::Result, string::String};
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct LoadOpt {
     pub load_raw: bool,
-}
-impl Default for LoadOpt {
-    fn default() -> Self {
-        LoadOpt { load_raw: false }
-    }
 }
 
 pub trait Storable: Sized {

@@ -3,6 +3,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_slice)]
 #![feature(maybe_uninit_write_slice)]
+#![allow(incomplete_features)]
 
 pub mod id;
 pub mod utils {

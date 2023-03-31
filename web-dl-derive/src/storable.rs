@@ -10,29 +10,21 @@ use syn::{
     DeriveInput, Expr, FieldValue, Ident, Member,
 };
 
-#[derive(FromMeta, Clone, Copy)]
+#[derive(FromMeta, Default, Clone, Copy)]
 enum StoreFormat {
+    #[default]
     Directory,
     Yaml,
     Json,
 }
-impl Default for StoreFormat {
-    fn default() -> Self {
-        StoreFormat::Directory
-    }
-}
 
-#[derive(FromMeta)]
+#[derive(Default, FromMeta)]
 enum StorePath {
+    #[default]
     Regular,
     Flatten,
     Ext(String),
     Name(String),
-}
-impl Default for StorePath {
-    fn default() -> Self {
-        StorePath::Regular
-    }
 }
 
 #[derive(FromField)]

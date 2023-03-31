@@ -108,11 +108,11 @@ impl HasId for Activity {
                 }
             };
         }
-        return target!(Answer, Article, Collection, Column, Pin, Question);
+        target!(Answer, Article, Collection, Column, Pin, Question)
     }
 }
 impl StoreItem for Activity {
-    fn in_store<'a>(id: Self::Id<'a>, store: &crate::store::Store) -> bool {
+    fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
         macro_rules! target {
             ($($t:ident),+) => {
                 match id.target {
@@ -121,9 +121,9 @@ impl StoreItem for Activity {
                 }
             };
         }
-        return target!(Answer, Article, Collection, Column, Question, Pin);
+        target!(Answer, Article, Collection, Column, Question, Pin)
     }
-    fn link_info<'a>(id: Self::Id<'a>, store: &Store, dest: PathBuf) -> Option<LinkInfo> {
+    fn link_info(id: Self::Id<'_>, store: &Store, dest: PathBuf) -> Option<LinkInfo> {
         macro_rules! target {
             ($($t:ident),+) => {
                 match id.target {
@@ -132,7 +132,7 @@ impl StoreItem for Activity {
                 }
             };
         }
-        return target!(Answer, Article, Collection, Column, Question, Pin);
+        target!(Answer, Article, Collection, Column, Question, Pin)
     }
     fn save_data(
         &self,
@@ -147,7 +147,7 @@ impl StoreItem for Activity {
                 }
             };
         }
-        return target!(Answer, Article, Collection, Column, Question, Pin);
+        target!(Answer, Article, Collection, Column, Question, Pin)
     }
 }
 
@@ -183,7 +183,7 @@ impl Item for Activity {
                 }
             };
         }
-        return target!(Answer, Article, Collection, Column, Pin, Question);
+        target!(Answer, Article, Collection, Column, Pin, Question)
     }
     async fn get_images<P: crate::progress::ItemProg>(
         &mut self,
@@ -198,7 +198,7 @@ impl Item for Activity {
                 }
             };
         }
-        return target!(Answer, Article, Collection, Column, Pin, Question);
+        target!(Answer, Article, Collection, Column, Pin, Question)
     }
 }
 

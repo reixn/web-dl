@@ -63,7 +63,7 @@ impl HasId for Article {
     }
 }
 impl BasicStoreItem for Article {
-    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
         info.article.contains(&id)
     }
     fn add_info(&self, info: &mut crate::store::StoreObject) {

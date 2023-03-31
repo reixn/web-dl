@@ -57,7 +57,7 @@ impl HasId for Column {
     }
 }
 impl BasicStoreItem for Column {
-    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
         info.column.contains(id)
     }
     fn add_info(&self, info: &mut crate::store::StoreObject) {

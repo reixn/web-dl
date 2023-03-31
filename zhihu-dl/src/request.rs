@@ -50,7 +50,7 @@ impl Client {
         method: Method,
         url: U,
     ) -> req::RequestBuilder {
-        S::sign_request(&self, method, url)
+        S::sign_request(self, method, url)
     }
 }
 impl Default for Client {

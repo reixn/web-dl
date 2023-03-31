@@ -58,13 +58,13 @@ pub struct StoreObject {
     pub(crate) user: BTreeSet<UserId>,
 }
 
-pub(crate) fn item_path<'a, I: HasId>(id: I::Id<'a>, mut path: PathBuf) -> PathBuf {
+pub(crate) fn item_path<I: HasId>(id: I::Id<'_>, mut path: PathBuf) -> PathBuf {
     path.push(I::TYPE);
     path.push(id.to_string());
     path
 }
 pub trait BasicStoreItem: HasId + storable::Storable {
-    fn in_store<'a>(id: Self::Id<'a>, info: &StoreObject) -> bool;
+    fn in_store(id: Self::Id<'_>, info: &StoreObject) -> bool;
     fn add_info(&self, info: &mut StoreObject);
 }
 
@@ -141,7 +141,7 @@ impl Store {
         )
         .map_err(StoreError::from)
     }
-    pub fn store_path<'a, I: HasId>(&self, id: I::Id<'a>) -> PathBuf {
+    pub fn store_path<I: HasId>(&self, id: I::Id<'_>) -> PathBuf {
         item_path::<I>(id, self.root.clone())
     }
     pub(crate) fn add_media<I: media::HasImage>(&mut self, data: &I) -> Result<(), media::Error> {
@@ -163,8 +163,8 @@ pub struct LinkInfo {
     pub link: PathBuf,
 }
 pub trait StoreItem: HasId {
-    fn in_store<'a>(id: Self::Id<'a>, store: &Store) -> bool;
-    fn link_info<'a>(id: Self::Id<'a>, store: &Store, dest: PathBuf) -> Option<LinkInfo>;
+    fn in_store(id: Self::Id<'_>, store: &Store) -> bool;
+    fn link_info(id: Self::Id<'_>, store: &Store, dest: PathBuf) -> Option<LinkInfo>;
     fn save_data(
         &self,
         store: &mut Store,
@@ -173,10 +173,10 @@ pub trait StoreItem: HasId {
 }
 
 impl<I: BasicStoreItem> StoreItem for I {
-    fn in_store<'a>(id: Self::Id<'a>, store: &Store) -> bool {
+    fn in_store(id: Self::Id<'_>, store: &Store) -> bool {
         <Self as BasicStoreItem>::in_store(id, &store.objects)
     }
-    fn link_info<'a>(id: Self::Id<'a>, store: &Store, dest: PathBuf) -> Option<LinkInfo> {
+    fn link_info(id: Self::Id<'_>, store: &Store, dest: PathBuf) -> Option<LinkInfo> {
         Some(LinkInfo {
             source: store.store_path::<Self>(id),
             link: item_path::<Self>(id, dest),

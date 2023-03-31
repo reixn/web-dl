@@ -19,7 +19,7 @@ impl<'a> Drop for SubProgress<'a> {
         self.multi_progress.remove(&self.progress_bar);
     }
 }
-async fn start_sleep<'a>(multi_progress: &'a MultiProgress, duration: std::time::Duration) {
+async fn start_sleep(multi_progress: &MultiProgress, duration: std::time::Duration) {
     let pb = multi_progress.add(
         ProgressBar::new_spinner().with_style(
             ProgressStyle::default_spinner()
@@ -38,7 +38,7 @@ async fn start_sleep<'a>(multi_progress: &'a MultiProgress, duration: std::time:
     multi_progress.remove(&pb);
 }
 impl<'a> Progress for SubProgress<'a> {
-    fn suspend<F: FnOnce() -> ()>(&self, f: F) {
+    fn suspend<F: FnOnce()>(&self, f: F) {
         self.multi_progress.suspend(f)
     }
     async fn sleep(&self, duration: std::time::Duration) {
@@ -116,7 +116,7 @@ impl<'a> Progress for SubWrapper<'a> {
     async fn sleep(&self, duration: std::time::Duration) {
         start_sleep(self.0, duration).await;
     }
-    fn suspend<F: FnOnce() -> ()>(&self, f: F) {
+    fn suspend<F: FnOnce()>(&self, f: F) {
         self.0.suspend(f);
     }
 }
@@ -249,7 +249,7 @@ impl Progress for ProgressReporter {
     async fn sleep(&self, duration: std::time::Duration) {
         start_sleep(&self.multi_progress, duration).await
     }
-    fn suspend<F: FnOnce() -> ()>(&self, f: F) {
+    fn suspend<F: FnOnce()>(&self, f: F) {
         self.multi_progress.suspend(f)
     }
 }

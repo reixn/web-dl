@@ -1700,6 +1700,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "thiserror",
  "web_dl_derive",
 ]
 

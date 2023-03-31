@@ -6,7 +6,7 @@ use mime2ext::mime2ext;
 use mime_classifier::{ApacheBugFlag, LoadContext, MimeClassifier, NoSniffFlag};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
-use std::{error, fmt::Display, mem::MaybeUninit, rc::Rc};
+use std::{fmt::Display, mem::MaybeUninit, rc::Rc};
 
 mod hash;
 pub use hash::HashDigest;
@@ -16,29 +16,18 @@ pub use store::{Loader, RefSet, Storer};
 pub mod macro_export {
     pub use std::{option::Option, result::Result, string::String};
 }
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
-    Store(store::Error),
-    Chained { field: String, source: Box<Error> },
-}
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Store(e) => e.fmt(f),
-            Error::Chained { field, .. } => {
-                f.write_fmt(format_args!("failed to process {}", field))
-            }
-        }
-    }
-}
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            Error::Store(s) => Some(s),
-            Error::Chained { source, .. } => Some(source),
-        }
-    }
+    #[error(transparent)]
+    Store(#[from] store::Error),
+    #[error("failed to process {field}")]
+    Chained {
+        field: String,
+        #[source]
+        source: Box<Error>,
+    },
 }
 
 pub trait HasImage {

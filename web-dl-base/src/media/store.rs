@@ -1,12 +1,12 @@
 use super::hash::HashDigest;
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
-    error,
     fmt::Display,
     fs, io,
     path::{Path, PathBuf},
     rc::Rc,
 };
+use thiserror::Error;
 
 #[derive(Debug)]
 pub enum ErrorOp {
@@ -14,28 +14,25 @@ pub enum ErrorOp {
     Write(PathBuf),
     HardLink { original: PathBuf, link: PathBuf },
 }
-#[derive(Debug)]
-pub struct Error {
-    op: ErrorOp,
-    source: io::Error,
-}
-impl Display for Error {
+impl Display for ErrorOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.op {
-            ErrorOp::Read(b) => f.write_fmt(format_args!("failed to read `{}`", b.display())),
-            ErrorOp::Write(b) => f.write_fmt(format_args!("failed to write `{}`", b.display())),
+        match &self {
+            ErrorOp::Read(b) => f.write_fmt(format_args!("read `{}`", b.display())),
+            ErrorOp::Write(b) => f.write_fmt(format_args!("write `{}`", b.display())),
             ErrorOp::HardLink { original, link } => f.write_fmt(format_args!(
-                "failed to link `{}` to `{}`",
+                "link `{}` to `{}`",
                 original.display(),
                 link.display()
             )),
         }
     }
 }
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        Some(&self.source)
-    }
+#[derive(Debug, Error)]
+#[error("failed to {op}")]
+pub struct Error {
+    op: ErrorOp,
+    #[source]
+    source: io::Error,
 }
 
 pub struct Loader {
@@ -140,9 +137,11 @@ impl Storer {
     }
 }
 
+#[derive(Default)]
 pub struct RefSet<'a> {
     references: HashSet<(&'a HashDigest, &'a str)>,
 }
+
 impl<'a> RefSet<'a> {
     pub fn new() -> Self {
         Self {

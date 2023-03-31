@@ -53,15 +53,15 @@ impl HasId for Any {
     }
 }
 impl StoreItem for Any {
-    fn in_store<'a>(id: Self::Id<'a>, store: &crate::store::Store) -> bool {
+    fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
         match id {
             AnyId::Answer(a) => answer::Answer::in_store(a, store),
             AnyId::Article(a) => article::Article::in_store(a, store),
             AnyId::Other(_) => false,
         }
     }
-    fn link_info<'a>(
-        id: Self::Id<'a>,
+    fn link_info(
+        id: Self::Id<'_>,
         store: &crate::store::Store,
         dest: PathBuf,
     ) -> Option<crate::store::LinkInfo> {

@@ -1,7 +1,7 @@
 use core::slice;
 use md5::{Digest, Md5};
 use reqwest::{IntoUrl, Method, RequestBuilder};
-use std::mem::MaybeUninit;
+use std::{array::from_fn, mem::MaybeUninit};
 
 fn g(e: u32) -> u32 {
     const H_ZB: [u8; 256] = [
@@ -25,7 +25,7 @@ fn g(e: u32) -> u32 {
         0xd6,
     ];
     fn q(e: u32, t: u32) -> u32 {
-        (((4294967295 & e) as i32) << t) as u32 | e >> (32 - t)
+        ((e as i32) << t) as u32 | e >> (32 - t)
     }
     let r = u32::from_be_bytes(e.to_be_bytes().map(|i| H_ZB[i as usize]));
     r ^ q(r, 2) ^ q(r, 10) ^ q(r, 18) ^ q(r, 24)
@@ -86,8 +86,8 @@ fn encode_zse96(d: &[u8]) -> String {
                 &base16::encode_byte(d[i], base16::EncodeLower),
             );
         }
-        for i in 34..48 {
-            l50[i].write(48 - 34);
+        for i in &mut l50[34..48] {
+            i.write(48 - 34);
         }
         let l50 = unsafe { MaybeUninit::array_assume_init(l50) };
 
@@ -100,11 +100,7 @@ fn encode_zse96(d: &[u8]) -> String {
                     0x31, 0x64, 0x37,
                 ];
                 let l34 = &l50[0..16];
-                let mut ret: [MaybeUninit<u8>; 16] = MaybeUninit::uninit_array();
-                for i in 0..16 {
-                    ret[i].write(l34[i] ^ TABLE[i] ^ 42);
-                }
-                unsafe { MaybeUninit::array_assume_init(ret) }
+                from_fn::<u8, 16, _>(|i| l34[i] ^ TABLE[i] ^ 42)
             },
             &mut ret[0..16],
         );
@@ -133,15 +129,15 @@ fn encode_zse96(d: &[u8]) -> String {
             ((l53[i] as u32) ^ (58 >> l58) & 255) as usize
         }
         let mut l59 = l58(&l53, l56, l13);
-        l56 = l56 + 1;
-        l59 = l59 | l58(&l53, l56, l13 - 1) << 8;
-        l56 = l56 + 1;
-        l59 = l59 | l58(&l53, l56, l13 - 2) << 16;
-        l56 = l56 + 1;
-        l57.push(TABLE_55[l59 as usize & 63]);
-        l57.push(TABLE_55[(l59 as usize >> 6) & 63]);
-        l57.push(TABLE_55[(l59 as usize >> 12) & 63]);
-        l57.push(TABLE_55[(l59 as usize >> 18) & 63]);
+        l56 += 1;
+        l59 |= l58(&l53, l56, l13 - 1) << 8;
+        l56 += 1;
+        l59 |= l58(&l53, l56, l13 - 2) << 16;
+        l56 += 1;
+        l57.push(TABLE_55[l59 & 63]);
+        l57.push(TABLE_55[(l59 >> 6) & 63]);
+        l57.push(TABLE_55[(l59 >> 12) & 63]);
+        l57.push(TABLE_55[(l59 >> 18) & 63]);
     }
     l57
 }
@@ -153,13 +149,10 @@ impl super::Signer for Zse96V3 {
         let mut dig = Md5::new_with_prefix("101_3_3.0+");
         let url = path.into_url().unwrap();
         dig.update(url.path());
-        match url.query() {
-            Some(q) => {
-                dig.update("?");
-                dig.update(q);
-            }
-            None => (),
-        };
+        if let Some(q) = url.query() {
+            dig.update("?");
+            dig.update(q);
+        }
         dig.update("+");
         dig.update(
             client

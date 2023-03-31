@@ -5,15 +5,11 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Fields, Ident};
 
-#[derive(Clone, Copy, FromMeta)]
+#[derive(Clone, Copy, Default, FromMeta)]
 enum ErrSpec {
     PassThrough,
+    #[default]
     Chained,
-}
-impl Default for ErrSpec {
-    fn default() -> Self {
-        ErrSpec::Chained
-    }
 }
 #[derive(FromAttributes)]
 #[darling(attributes(has_image))]
@@ -214,13 +210,13 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     Some(i) => FieldInfo {
                         name: i.to_string(),
                         expr: quote!(self.#i),
-                        spec: spec,
+                        spec,
                         is_ref: false,
                     },
                     None => FieldInfo {
                         name: idx.to_string(),
                         expr: quote!(self.#idx),
-                        spec: spec,
+                        spec,
                         is_ref: false,
                     },
                 }),

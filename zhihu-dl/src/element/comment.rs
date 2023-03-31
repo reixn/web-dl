@@ -69,10 +69,7 @@ impl CommentTree {
         let mut child: HashMap<Option<CommentId>, Vec<CommentId>> = HashMap::new();
         let mut map: HashMap<CommentId, Comment> = HashMap::new();
         for i in data {
-            child
-                .entry(i.info.parent_id.map(|d| d))
-                .or_default()
-                .push(i.info.id);
+            child.entry(i.info.parent_id).or_default().push(i.info.id);
             map.insert(i.info.id, i);
         }
 

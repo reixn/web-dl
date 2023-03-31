@@ -226,7 +226,7 @@ impl Comment {
             let mut child_prog = prog.start_comments(ret.len() as u64);
             let mut child = LinkedList::new();
             for i in ret.iter() {
-                let prog = child_prog.start_comment(&i.info.id);
+                let prog = child_prog.start_comment(i.info.id);
                 if i.info.child_count != 0 {
                     child.append(&mut fetch_child(client, prog.start_child(), i.info.id).await?);
                 }
@@ -241,25 +241,19 @@ impl Comment {
                 exist.insert(i.info.id);
             });
             for i in ret.iter() {
-                match i.info.parent_id {
-                    Some(p) => {
-                        if !exist.contains(&p) {
-                            missing.insert(p);
-                        }
+                if let Some(p) = i.info.parent_id {
+                    if !exist.contains(&p) {
+                        missing.insert(p);
                     }
-                    None => {}
                 }
             }
             while let Some(m) = missing.pop_first() {
                 let c = fetch_comment(client, m).await?;
                 exist.insert(m);
-                match c.info.parent_id {
-                    Some(p) => {
-                        if !exist.contains(&p) {
-                            missing.insert(p);
-                        }
+                if let Some(p) = c.info.parent_id {
+                    if !exist.contains(&p) {
+                        missing.insert(p);
                     }
-                    None => {}
                 }
                 ret.push_back(c);
             }
@@ -270,7 +264,7 @@ impl Comment {
             for i in ret.iter_mut() {
                 let urls = i.content.image_urls();
                 if !urls.is_empty() {
-                    let prog = child_prog.start_comment(&i.info.id);
+                    let prog = child_prog.start_comment(i.info.id);
                     i.content
                         .fetch_images(client, &mut prog.start_images(urls.len() as u64), urls)
                         .await;

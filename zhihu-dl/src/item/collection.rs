@@ -50,7 +50,7 @@ impl HasId for Collection {
     }
 }
 impl BasicStoreItem for Collection {
-    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
         info.collection.contains(&id)
     }
     fn add_info(&self, info: &mut crate::store::StoreObject) {

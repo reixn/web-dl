@@ -159,11 +159,11 @@ fn link_to_dest(relative: bool, store_path: &Path, dest: &Path) -> Result<(), Li
         let mut dest_com = dest.parent().unwrap().components().peekable();
         while store_com.peek() == dest_com.peek() {
             store_com.next();
-            if let None = dest_com.next() {
+            if dest_com.next().is_none() {
                 break;
             }
         }
-        while let Some(v) = dest_com.next() {
+        for v in dest_com {
             match v {
                 Component::Prefix(_) => {
                     return Err(LinkError::DifferentPrefix {
@@ -175,7 +175,7 @@ fn link_to_dest(relative: bool, store_path: &Path, dest: &Path) -> Result<(), Li
                 _ => unreachable!(),
             }
         }
-        while let Some(v) = store_com.next() {
+        for v in store_com {
             match v {
                 Component::Normal(d) => ret.push(d),
                 _ => unreachable!(),
