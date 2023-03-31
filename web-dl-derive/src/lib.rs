@@ -1,11 +1,10 @@
 #![feature(iterator_try_collect)]
 use proc_macro::TokenStream;
 
-mod attrib;
 mod media;
 mod storable;
 
-#[proc_macro_derive(HasImage, attributes(store))]
+#[proc_macro_derive(HasImage, attributes(has_image))]
 pub fn derive_has_image(input: TokenStream) -> TokenStream {
     media::derive_has_image(input)
 }

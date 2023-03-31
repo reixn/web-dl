@@ -2,7 +2,7 @@ use super::{Comment, CommentId, CommentInfo};
 use crate::{
     element::{author::Author, content::Content},
     progress::{self, CommentProg, CommentsProg},
-    raw_data::{FromRaw, RawData, RawDataInfo},
+    raw_data::{self, FromRaw, RawData, RawDataInfo},
     request::Client,
 };
 use chrono::{DateTime, FixedOffset, Utc};
@@ -126,7 +126,7 @@ async fn fetch_root<I: Display, P: progress::FetchProg>(
     log::debug!("fetching root comment for {} {}", root_type, &id);
     parse_comments(
         client
-            .get_paged(
+            .get_paged::<{ raw_data::Container::None }, _, _>(
                 prog,
                 format!(
                     "https://www.zhihu.com/api/v4/comment_v5/{}/{}/root_comment",
@@ -165,7 +165,7 @@ async fn fetch_child<P: progress::FetchProg>(
     log::debug!("fetching child comments of {}", id);
     parse_comments(
         client
-            .get_paged(
+            .get_paged::<{ raw_data::Container::None }, _, _>(
                 prog,
                 format!(
                     "https://www.zhihu.com/api/v4/comment_v5/comment/{}/child_comment",
@@ -205,6 +205,7 @@ async fn fetch_comment(client: &Client, id: CommentId) -> Result<Comment, Error>
         data,
         info: RawDataInfo {
             fetch_time: Utc::now(),
+            container: raw_data::Container::None,
         },
     })
     .map_err(|e| Error {

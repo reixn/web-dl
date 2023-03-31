@@ -1,7 +1,8 @@
 use crate::{
     element::{Author, Content},
     meta::Version,
-    raw_data::{FromRaw, RawData},
+    raw_data::{self, FromRaw, RawData},
+    store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,7 @@ pub struct ColumnInfo {
     pub id: ColumnId,
     pub title: String,
     pub author: Author,
-    #[store(has_image)]
+    #[has_image]
     pub image: Option<Image>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
@@ -37,11 +38,12 @@ const VERSION: Version = Version { major: 1, minor: 0 };
 pub struct Column {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[store(path(ext = "yaml"), has_image(error = "pass_through"))]
+    #[has_image(error = "pass_through")]
+    #[store(path(ext = "yaml"))]
     pub info: ColumnInfo,
-    #[store(has_image)]
+    #[has_image]
     pub intro: Content,
-    #[store(has_image)]
+    #[has_image]
     pub description: Content,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -52,6 +54,14 @@ impl HasId for Column {
     type Id<'a> = &'a ColumnId;
     fn id(&self) -> Self::Id<'_> {
         &self.info.id
+    }
+}
+impl BasicStoreItem for Column {
+    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+        info.column.contains(id)
+    }
+    fn add_info(&self, info: &mut crate::store::StoreObject) {
+        info.column.insert(self.info.id.clone());
     }
 }
 
@@ -128,5 +138,41 @@ impl super::Item for Column {
                     false
                 }
             }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ColumnItem {
+    Regular,
+    Pinned,
+}
+impl Display for ColumnItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Regular => f.write_str("regular"),
+            Self::Pinned => f.write_str("pinned"),
+        }
+    }
+}
+impl super::ItemContainer<super::any::Any, ColumnItem> for Column {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        option: ColumnItem,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged::<{ raw_data::Container::Column }, _, _>(
+                prog.start_fetch(),
+                format!(
+                    "https://www.zhihu.com/api/v4/columns/{}/{}",
+                    id,
+                    match option {
+                        ColumnItem::Regular => "items",
+                        ColumnItem::Pinned => "pinned-items",
+                    }
+                ),
+            )
+            .await
     }
 }

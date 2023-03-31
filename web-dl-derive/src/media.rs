@@ -1,10 +1,44 @@
 extern crate proc_macro;
 
-use crate::attrib::{FieldSpec, HasImage, ImgErrSpec};
-use darling::{FromField, FromVariant, ToTokens};
+use darling::{FromAttributes, FromField, FromMeta, FromVariant, ToTokens};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Fields, Ident};
+
+#[derive(Clone, Copy, FromMeta)]
+enum ErrSpec {
+    PassThrough,
+    Chained,
+}
+impl Default for ErrSpec {
+    fn default() -> Self {
+        ErrSpec::Chained
+    }
+}
+#[derive(FromAttributes)]
+#[darling(attributes(has_image))]
+struct HasImage {
+    #[darling(default)]
+    error: ErrSpec,
+}
+
+enum FieldSpec {
+    HasImage(HasImage),
+    Ignore,
+}
+impl FromField for FieldSpec {
+    fn from_field(field: &syn::Field) -> darling::Result<Self> {
+        if field
+            .attrs
+            .iter()
+            .any(|a| a.path.to_token_stream().to_string() == "has_image")
+        {
+            HasImage::from_attributes(&field.attrs).map(Self::HasImage)
+        } else {
+            Ok(Self::Ignore)
+        }
+    }
+}
 
 macro_rules! external {
     ($i:ident) => {
@@ -28,7 +62,7 @@ fn gen_expr(info: &FieldInfo, is_load: bool, is_last: bool) -> TokenStream {
         let name = &info.name;
         let expr = &info.expr;
         match info.spec.error {
-            ImgErrSpec::Chained => {
+            ErrSpec::Chained => {
                 if is_load {
                     let f = exported!(load_img_chained);
                     let e = if info.is_ref {
@@ -47,7 +81,7 @@ fn gen_expr(info: &FieldInfo, is_load: bool, is_last: bool) -> TokenStream {
                     quote!(#f(#e, __storer, #name))
                 }
             }
-            ImgErrSpec::PassThrough => {
+            ErrSpec::PassThrough => {
                 if is_load {
                     quote!(#expr.load_images(__loader))
                 } else {
@@ -136,21 +170,23 @@ impl FromVariant for VariantRecv {
         let mut f_info = Vec::with_capacity(variant.fields.len());
         for (idx, f) in variant.fields.iter().enumerate() {
             let (id, name) = match &f.ident {
-                Some(i) => (i.to_token_stream(), i.to_string()),
+                Some(i) => (i.to_token_stream(), format!("{}::{}", variant.ident, i)),
                 None => (
                     format_ident!("__field_{}", idx).to_token_stream(),
-                    idx.to_string(),
+                    format!("{}::{}", variant.ident, idx),
                 ),
             };
             m.push((id.clone(), f.ident.is_some()));
-            FieldSpec::from_field(f).map(|fr| match fr.has_image {
-                Some(spec) => f_info.push(FieldInfo {
-                    name,
-                    expr: id,
-                    spec: spec.unwrap_or_default(),
-                    is_ref: true,
-                }),
-                None => (),
+            FieldSpec::from_field(f).map(|fr| match fr {
+                FieldSpec::HasImage(spec) => {
+                    f_info.push(FieldInfo {
+                        name,
+                        expr: id,
+                        spec,
+                        is_ref: true,
+                    });
+                }
+                FieldSpec::Ignore => (),
             })?;
         }
         Ok(Self {
@@ -173,24 +209,22 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             }
             .into_iter()
             .enumerate()
-            .filter_map(|(idx, f)| {
-                FieldSpec::from_field(&f)
-                    .unwrap()
-                    .has_image
-                    .map(|spec| match &f.ident {
-                        Some(i) => FieldInfo {
-                            name: i.to_string(),
-                            expr: quote!(self.#i),
-                            spec: spec.unwrap_or_default(),
-                            is_ref: false,
-                        },
-                        None => FieldInfo {
-                            name: idx.to_string(),
-                            expr: quote!(self.#idx),
-                            spec: spec.unwrap_or_default(),
-                            is_ref: false,
-                        },
-                    })
+            .filter_map(|(idx, f)| match FieldSpec::from_field(&f).unwrap() {
+                FieldSpec::HasImage(spec) => Some(match &f.ident {
+                    Some(i) => FieldInfo {
+                        name: i.to_string(),
+                        expr: quote!(self.#i),
+                        spec: spec,
+                        is_ref: false,
+                    },
+                    None => FieldInfo {
+                        name: idx.to_string(),
+                        expr: quote!(self.#idx),
+                        spec: spec,
+                        is_ref: false,
+                    },
+                }),
+                FieldSpec::Ignore => None,
             })
             .collect();
             gen_impl(
@@ -215,9 +249,9 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     fields,
                 } = VariantRecv::from_variant(&v).unwrap();
                 if fields.is_empty() {
-                    load_image.extend(quote!(Self::#vid => #res::Ok(())));
-                    store_image.extend(quote!(Self::#vid => #res::Ok(())));
-                    image_ref.extend(quote!(Self::#vid => ()));
+                    load_image.extend(quote!(Self::#vid { .. } => #res::Ok(())));
+                    store_image.extend(quote!(Self::#vid { .. } => #res::Ok(())));
+                    image_ref.extend(quote!(Self::#vid { .. } => ()));
                     continue;
                 }
                 let matched = {
@@ -243,13 +277,13 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 let r = gen_refs(&fields);
                 load_image.extend(quote!(#matched { #load_expr }));
                 store_image.extend(quote!(#matched { #store_expr }));
-                image_ref.extend(quote!( #matched #r ));
+                image_ref.extend(quote!( #matched { #r } ));
             }
             gen_impl(
                 input.ident,
-                quote!( match &mut self { #load_image } ),
-                quote!(match &self { #store_image }),
-                quote!( match &self { #image_ref } ),
+                quote!( match self { #load_image } ),
+                quote!(match self { #store_image }),
+                quote!( match self { #image_ref } ),
             )
         }
         Data::Union(_) => panic!("derive HasImage for union is not supported"),

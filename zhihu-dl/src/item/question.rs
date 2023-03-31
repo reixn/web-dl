@@ -1,8 +1,9 @@
 use crate::{
     element::{comment, Author, Comment, Content},
     meta::Version,
-    raw_data::{FromRaw, RawData},
+    raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
+    store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
@@ -36,9 +37,9 @@ pub struct Question {
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: QuestionInfo,
-    #[store(has_image)]
+    #[has_image]
     pub content: Content,
-    #[store(has_image)]
+    #[has_image]
     pub comments: Vec<Comment>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -48,6 +49,14 @@ impl HasId for Question {
     type Id<'a> = QuestionId;
     fn id(&self) -> Self::Id<'_> {
         self.info.id
+    }
+}
+impl BasicStoreItem for Question {
+    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+        info.question.contains(&id)
+    }
+    fn add_info(&self, info: &mut crate::store::StoreObject) {
+        info.question.insert(self.info.id);
     }
 }
 
@@ -123,6 +132,27 @@ impl super::Item for Question {
         let u = self.content.image_urls();
         self.content
             .fetch_images(client, &mut prog.start_images(u.len() as u64), u)
+            .await
+    }
+}
+
+mod param;
+impl super::ItemContainer<super::answer::Answer, super::VoidOpt> for Question {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        _: super::VoidOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged_sign::<{ raw_data::Container::Question }, Zse96V3, _, _>(
+                prog.start_fetch(),
+                Url::parse_with_params(
+                    format!("https://www.zhihu.com/api/v4/questions/{}/answers", id).as_str(),
+                    &[("include", param::ANSWER_INCLUDE)],
+                )
+                .unwrap(),
+            )
             .await
     }
 }

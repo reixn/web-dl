@@ -1,7 +1,6 @@
 extern crate proc_macro;
 
-use crate::attrib::{FieldSpec, StoreFormat, StorePath};
-use darling::{ast::Data, FromDeriveInput};
+use darling::{ast::Data, util::Flag, FromDeriveInput, FromField, FromMeta};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -10,6 +9,40 @@ use syn::{
     token::{Colon, Comma},
     DeriveInput, Expr, FieldValue, Ident, Member,
 };
+
+#[derive(FromMeta, Clone, Copy)]
+enum StoreFormat {
+    Directory,
+    Yaml,
+    Json,
+}
+impl Default for StoreFormat {
+    fn default() -> Self {
+        StoreFormat::Directory
+    }
+}
+
+#[derive(FromMeta)]
+enum StorePath {
+    Regular,
+    Flatten,
+    Ext(String),
+    Name(String),
+}
+impl Default for StorePath {
+    fn default() -> Self {
+        StorePath::Regular
+    }
+}
+
+#[derive(FromField)]
+#[darling(attributes(store))]
+struct FieldSpec {
+    pub ident: Option<Ident>,
+    #[darling(default)]
+    pub path: StorePath,
+    pub raw_data: Flag,
+}
 
 #[derive(FromDeriveInput)]
 #[darling(attributes(store))]
@@ -58,6 +91,7 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
             let res = external!(Result);
             let load_chain = exported!(load_chained);
             let store_chain = exported!(store_chained);
+            let push_path = exported!(push_path);
             let mut load_fields: Punctuated<FieldValue, Comma> = Punctuated::new();
             let mut store_fields = Vec::new();
             for i in input.data.take_struct().unwrap() {
@@ -65,12 +99,12 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
                 let id_str = id.to_string();
                 let path: Expr = match i.path {
                     StorePath::Regular => {
-                        parse_quote!(path.with_file_name(#id_str))
+                        parse_quote!(#push_path(path, #id_str))
                     }
                     StorePath::Flatten => parse_quote!(path),
                     StorePath::Ext(e) => {
                         let v = format!("{}.{}", id_str, e);
-                        parse_quote!(path.with_file_name(#v))
+                        parse_quote!(#push_path(path, #v))
                     }
                     StorePath::Name(r) => parse_quote!(path.with_file_name(#r)),
                 };

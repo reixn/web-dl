@@ -69,7 +69,7 @@ impl error::Error for Error {
 }
 pub fn create_dir_missing(path: &Path) -> Result<(), Error> {
     if !path.exists() {
-        fs::create_dir(path).map_err(|e| Error::Io {
+        fs::create_dir_all(path).map_err(|e| Error::Io {
             op: IoErrorOp::CreateDir,
             path: path.to_path_buf(),
             source: e,
@@ -103,6 +103,11 @@ pub fn store_yaml<D: serde::Serialize, P: AsRef<Path>>(value: &D, path: P) -> Re
 }
 pub fn store_json<D: serde::Serialize, P: AsRef<Path>>(value: &D, path: P) -> Result<(), Error> {
     serde_json::to_writer_pretty(io::BufWriter::new(create_file(path)?), value).map_err(Error::Json)
+}
+pub fn push_path<P: AsRef<Path>>(path: P, value: &str) -> PathBuf {
+    let mut ret = path.as_ref().to_path_buf();
+    ret.push(value);
+    ret
 }
 
 pub mod macro_export {
@@ -214,7 +219,7 @@ impl<I: HasId + Storable> Storable for Vec<I> {
         create_dir_missing(path)?;
         for i in self {
             let id = i.id().to_string();
-            i.store(path.with_file_name(&id))
+            i.store(push_path(path, id.as_str()))
                 .map_err(|e| Error::Chained {
                     field: id,
                     source: Box::new(e),

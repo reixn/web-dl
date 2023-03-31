@@ -1,7 +1,8 @@
 use crate::{
     element::{comment, Author, Comment, Content},
     meta::Version,
-    raw_data::{FromRaw, RawData},
+    raw_data::{self, FromRaw, RawData},
+    store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -33,9 +34,9 @@ pub struct Collection {
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: CollectionInfo,
-    #[store(has_image)]
+    #[has_image]
     pub description: Content,
-    #[store(has_image)]
+    #[has_image]
     pub comments: Vec<Comment>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -46,6 +47,14 @@ impl HasId for Collection {
     type Id<'a> = CollectionId;
     fn id(&self) -> CollectionId {
         self.info.id
+    }
+}
+impl BasicStoreItem for Collection {
+    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+        info.collection.contains(&id)
+    }
+    fn add_info(&self, info: &mut crate::store::StoreObject) {
+        info.collection.insert(self.info.id);
     }
 }
 
@@ -117,5 +126,32 @@ impl super::Item for Collection {
         self.description
             .fetch_images(client, &mut prog.start_images(u.len() as u64), u)
             .await
+    }
+}
+
+impl super::ItemContainer<super::any::Any, super::VoidOpt> for Collection {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        _: super::VoidOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged::<{ raw_data::Container::Collection }, _, _>(
+                prog.start_fetch(),
+                format!("https://www.zhihu.com/api/v4/collections/{}/items", id),
+            )
+            .await
+    }
+    fn parse_item(raw_data: RawData) -> Result<super::any::Any, serde_json::Error> {
+        use super::{
+            any::{self, Any},
+            Item,
+        };
+        #[derive(Deserialize)]
+        struct Reply {
+            content: any::Reply,
+        }
+        Reply::deserialize(&raw_data.data).map(|r| Any::from_reply(r.content, raw_data))
     }
 }

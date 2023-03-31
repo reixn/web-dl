@@ -17,8 +17,10 @@ pub mod element {
     pub use self::{author::Author, comment::Comment, content::Content};
 }
 
+pub mod driver;
 pub mod item;
 pub mod meta;
 pub mod progress;
 pub mod raw_data;
 pub mod request;
+pub(crate) mod store;

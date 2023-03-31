@@ -7,6 +7,7 @@ use crate::{
     progress,
     raw_data::{FromRaw, RawData},
     request::Client,
+    store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -33,7 +34,7 @@ pub struct ArticleInfo {
     pub id: ArticleId,
     pub title: String,
     pub author: Author,
-    #[store(has_image)]
+    #[has_image]
     pub cover: Option<Image>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
@@ -43,11 +44,12 @@ pub struct ArticleInfo {
 pub struct Article {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[store(path(ext = "yaml"), has_image(error = "pass_through"))]
+    #[has_image(error = "pass_through")]
+    #[store(path(ext = "yaml"))]
     pub info: ArticleInfo,
-    #[store(has_image)]
+    #[has_image]
     pub content: Content,
-    #[store(has_image)]
+    #[has_image]
     pub comments: Vec<Comment>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -58,6 +60,14 @@ impl HasId for Article {
     type Id<'a> = ArticleId;
     fn id(&self) -> Self::Id<'_> {
         self.info.id
+    }
+}
+impl BasicStoreItem for Article {
+    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+        info.article.contains(&id)
+    }
+    fn add_info(&self, info: &mut crate::store::StoreObject) {
+        info.article.insert(self.info.id);
     }
 }
 

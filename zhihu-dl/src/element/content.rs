@@ -20,7 +20,7 @@ pub const VERSION: Version = Version { major: 1, minor: 0 };
 #[store(format = "yaml")]
 pub struct ContentInfo {
     pub is_empty: bool,
-    #[store(has_image)]
+    #[has_image]
     pub images: Vec<ImageRef>,
 }
 
@@ -28,7 +28,8 @@ pub struct ContentInfo {
 pub struct Content {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[store(path(ext = "yaml"), has_image(error = "pass_through"))]
+    #[store(path(ext = "yaml"))]
+    #[has_image(error = "pass_through")]
     pub info: ContentInfo,
     #[store(path(ext = "html"))]
     pub raw_html: Option<String>,

@@ -2,6 +2,7 @@ use crate::{
     element::{comment, Author, Comment, Content},
     meta::Version,
     raw_data::{FromRaw, RawData, StrU64},
+    store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ pub const CONTENT_VERSION: Version = Version { major: 1, minor: 0 };
 pub struct PinContent {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[store(has_image)]
+    #[has_image]
     pub content_html: Content,
 }
 
@@ -39,7 +40,7 @@ pub struct PinInfo {
 pub struct PinBody {
     #[store(path(ext = "yaml"))]
     pub info: PinInfo,
-    #[store(has_image(error = "pass_through"))]
+    #[has_image(error = "pass_through")]
     pub content: PinContent,
 }
 
@@ -49,11 +50,12 @@ pub const VERSION: Version = Version { major: 1, minor: 0 };
 pub struct Pin {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[store(path = "flatten", has_image)]
+    #[has_image]
+    #[store(path = "flatten")]
     pub body: PinBody,
-    #[store(has_image)]
+    #[has_image]
     pub repin: Option<PinBody>,
-    #[store(has_image)]
+    #[has_image]
     pub comments: Vec<Comment>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -63,6 +65,14 @@ impl HasId for Pin {
     type Id<'a> = PinId;
     fn id(&self) -> Self::Id<'_> {
         self.body.info.id
+    }
+}
+impl BasicStoreItem for Pin {
+    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+        info.pin.contains(&id)
+    }
+    fn add_info(&self, info: &mut crate::store::StoreObject) {
+        info.pin.insert(self.body.info.id);
     }
 }
 

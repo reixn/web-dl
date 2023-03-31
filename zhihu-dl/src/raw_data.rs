@@ -93,15 +93,27 @@ impl<'de> Deserialize<'de> for FromRaw<Image> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Container {
+    None,
+    Activity,
+    Collection,
+    Column,
+    Question,
+    User,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Storable)]
 #[store(format = "yaml")]
 pub struct RawDataInfo {
     pub fetch_time: DateTime<Utc>,
+    pub container: Container,
 }
 
 #[derive(Debug, Clone, Storable)]
 pub struct RawData {
     #[store(path(ext = "yaml"))]
     pub info: RawDataInfo,
+    #[store(path(ext = "json"))]
     pub data: serde_json::Value,
 }

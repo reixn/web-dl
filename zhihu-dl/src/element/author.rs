@@ -22,7 +22,7 @@ impl<'de> Deserialize<'de> for FromRaw<UserType> {
         enum Reply {
             #[serde(rename = "people")]
             People,
-            #[serde(rename = "org")]
+            #[serde(rename = "organization")]
             Org,
         }
         Reply::deserialize(deserializer).map(|v| match v {

@@ -43,7 +43,7 @@ pub struct Comment {
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: CommentInfo,
-    #[store(has_image)]
+    #[has_image]
     pub content: Content,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,

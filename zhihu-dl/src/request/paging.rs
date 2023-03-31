@@ -1,7 +1,7 @@
 use super::{Client, Signer};
 use crate::{
     progress,
-    raw_data::{RawData, RawDataInfo},
+    raw_data::{Container, RawData, RawDataInfo},
 };
 use chrono::Utc;
 use reqwest::{IntoUrl, Method};
@@ -16,7 +16,7 @@ struct Paging {
     next: String,
 }
 
-fn deserialize_data<'de, D: de::Deserializer<'de>>(
+fn deserialize_data<'de, const C: Container, D: de::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<LinkedList<RawData>, D::Error> {
     struct DataVisitor(RawDataInfo);
@@ -41,29 +41,35 @@ fn deserialize_data<'de, D: de::Deserializer<'de>>(
     }
     deserializer.deserialize_seq(DataVisitor(RawDataInfo {
         fetch_time: Utc::now(),
+        container: C,
     }))
 }
 
 #[derive(Deserialize)]
-struct PagedData {
-    #[serde(default, deserialize_with = "deserialize_data")]
+struct PagedData<const C: Container> {
+    #[serde(default, deserialize_with = "deserialize_data::<C, _>")]
     data: LinkedList<RawData>,
     #[serde(default)]
     paging: Option<Paging>,
 }
 
 impl Client {
-    pub(crate) async fn get_paged_sign<S: Signer, P: progress::FetchProg, U: IntoUrl>(
+    pub(crate) async fn get_paged_sign<const C: Container, S, P, U>(
         &self,
         mut prog: P,
         url: U,
-    ) -> reqwest::Result<LinkedList<RawData>> {
+    ) -> reqwest::Result<LinkedList<RawData>>
+    where
+        S: Signer,
+        P: progress::FetchProg,
+        U: IntoUrl,
+    {
         let (mut ret, mut paging) = {
             let pd = self
                 .request_signed::<S, U>(Method::GET, url)
                 .send()
                 .await?
-                .json::<PagedData>()
+                .json::<PagedData<C>>()
                 .await?;
             (pd.data, pd.paging)
         };
@@ -83,7 +89,7 @@ impl Client {
                 .request_signed::<S, String>(Method::GET, next)
                 .send()
                 .await?
-                .json::<PagedData>()
+                .json::<PagedData<C>>()
                 .await?;
             prog.inc(pd.data.len() as u64);
             ret.append(&mut pd.data);
@@ -92,11 +98,12 @@ impl Client {
         }
         Ok(ret)
     }
-    pub(crate) async fn get_paged<P: progress::FetchProg, U: IntoUrl>(
+    pub(crate) async fn get_paged<const C: Container, P: progress::FetchProg, U: IntoUrl>(
         &self,
         prog: P,
         url: U,
     ) -> reqwest::Result<LinkedList<RawData>> {
-        self.get_paged_sign::<super::NoSign, P, U>(prog, url).await
+        self.get_paged_sign::<C, super::NoSign, P, U>(prog, url)
+            .await
     }
 }

@@ -19,7 +19,7 @@ impl<'a> Drop for SubProgress<'a> {
         self.multi_progress.remove(&self.progress_bar);
     }
 }
-async fn start_sleep<'a>(multi_progress:&'a MultiProgress, duration:std::time::Duration)  {
+async fn start_sleep<'a>(multi_progress: &'a MultiProgress, duration: std::time::Duration) {
     let pb = multi_progress.add(
         ProgressBar::new_spinner().with_style(
             ProgressStyle::default_spinner()
@@ -34,7 +34,8 @@ async fn start_sleep<'a>(multi_progress:&'a MultiProgress, duration:std::time::D
         ),
     );
     pb.enable_steady_tick(TICK_INTERVAL);
-   tokio::time::sleep(duration).await
+    tokio::time::sleep(duration).await;
+    multi_progress.remove(&pb);
 }
 impl<'a> Progress for SubProgress<'a> {
     fn suspend<F: FnOnce() -> ()>(&self, f: F) {
@@ -61,7 +62,7 @@ impl<'a> FetchProg for SubProgress<'a> {
             }
         }
     }
-    
+
     fn inc(&mut self, delta: u64) {
         self.progress_bar.inc(delta)
     }
@@ -93,9 +94,9 @@ impl<'a> ImageProg for SubProgress<'a> {
     }
 }
 impl<'a> ImagesProg for SubProgress<'a> {
-    type ImageRep<'b> = SubProgress<'b> 
+    type ImageRep<'b> = SubProgress<'b>
         where Self:'a+'b;
-    fn start_image<I:Display>(&mut self, url: I) -> Self::ImageRep<'_> {
+    fn start_image<I: Display>(&mut self, url: I) -> Self::ImageRep<'_> {
         self.progress_bar.inc(1);
         self.progress_bar
             .set_message(format!("fetching image {}", url));
@@ -111,12 +112,23 @@ impl<'a> ImagesProg for SubProgress<'a> {
 
 pub struct SubWrapper<'a>(pub &'a MultiProgress);
 
+impl<'a> Progress for SubWrapper<'a> {
+    async fn sleep(&self, duration: std::time::Duration) {
+        start_sleep(self.0, duration).await;
+    }
+    fn suspend<F: FnOnce() -> ()>(&self, f: F) {
+        self.0.suspend(f);
+    }
+}
+
 impl<'a> CommentProg for SubWrapper<'a> {
     type ChildRep<'b> = SubProgress<'b> where Self:'a+'b;
     fn start_child(&self) -> Self::ChildRep<'_> {
         SubProgress {
             multi_progress: self.0,
-            progress_bar: self.0.add(ProgressBar::new_spinner().with_message("fetching child comments")),
+            progress_bar: self
+                .0
+                .add(ProgressBar::new_spinner().with_message("fetching child comments")),
         }
     }
 
@@ -148,7 +160,9 @@ impl<'a> CommentTreeProg for SubWrapper<'a> {
     fn start_fetch_root(&self) -> Self::FetchRep<'_> {
         SubProgress {
             multi_progress: self.0,
-            progress_bar: self.0.add(ProgressBar::new_spinner().with_message("getting root comments")),
+            progress_bar: self
+                .0
+                .add(ProgressBar::new_spinner().with_message("getting root comments")),
         }
     }
 
@@ -210,7 +224,9 @@ impl<'a> ItemContainerProg for SubWrapper<'a> {
     fn start_fetch(&self) -> Self::FetchRep<'_> {
         SubProgress {
             multi_progress: self.0,
-            progress_bar: self.0.add(ProgressBar::new_spinner().with_message("fetching")),
+            progress_bar: self
+                .0
+                .add(ProgressBar::new_spinner().with_message("fetching")),
         }
     }
 
@@ -230,7 +246,7 @@ pub struct ProgressReporter {
     progress_bar: ProgressBar,
 }
 impl Progress for ProgressReporter {
-    async fn sleep(&self, duration: std::time::Duration)  {
+    async fn sleep(&self, duration: std::time::Duration) {
         start_sleep(&self.multi_progress, duration).await
     }
     fn suspend<F: FnOnce() -> ()>(&self, f: F) {
@@ -247,10 +263,10 @@ impl Reporter for ProgressReporter {
     fn new(jobs: Option<u64>) -> Self {
         let multi = MultiProgress::with_draw_target(ProgressDrawTarget::stdout());
         Self {
-            progress_bar: match  jobs {
-                Some(j) =>multi.add(ProgressBar::new(j).with_style(DEFAULT_BAR_STYLE.clone())),
-                None => ProgressBar::hidden()
-            } ,
+            progress_bar: match jobs {
+                Some(j) => multi.add(ProgressBar::new(j).with_style(DEFAULT_BAR_STYLE.clone())),
+                None => ProgressBar::hidden(),
+            },
             multi_progress: multi,
         }
     }

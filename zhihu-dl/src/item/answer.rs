@@ -3,6 +3,7 @@ use crate::{
     meta::Version,
     raw_data::{FromRaw, RawData},
     request::Zse96V3,
+    store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
@@ -42,9 +43,9 @@ pub struct Answer {
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: AnswerInfo,
-    #[store(has_image)]
+    #[has_image]
     pub content: Content,
-    #[store(has_image)]
+    #[has_image]
     pub comments: Vec<Comment>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -55,6 +56,14 @@ impl HasId for Answer {
     type Id<'a> = AnswerId;
     fn id(&self) -> AnswerId {
         self.info.id
+    }
+}
+impl BasicStoreItem for Answer {
+    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+        info.answer.contains(&id)
+    }
+    fn add_info(&self, info: &mut crate::store::StoreObject) {
+        info.answer.insert(self.info.id);
     }
 }
 

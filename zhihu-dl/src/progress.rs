@@ -6,7 +6,7 @@ pub trait FetchProg: Progress {
     fn inc(&mut self, delta: u64);
 }
 
-pub trait CommentProg {
+pub trait CommentProg: Progress {
     type ChildRep<'a>: FetchProg
     where
         Self: 'a;
@@ -25,7 +25,7 @@ pub trait CommentsProg: Progress {
     fn start_comment<I: Display>(&mut self, id: I) -> Self::CommentRep<'_>;
     fn skip_comment(&mut self);
 }
-pub trait CommentTreeProg {
+pub trait CommentTreeProg: Progress {
     type FetchRep<'a>: FetchProg
     where
         Self: 'a;
@@ -42,7 +42,7 @@ pub trait CommentTreeProg {
     fn start_comments(&self, count: u64) -> Self::CommentsRep<'_>;
 }
 
-pub trait ItemProg {
+pub trait ItemProg: Progress {
     type CommentTreeRep<'a>: CommentTreeProg
     where
         Self: 'a;
@@ -60,7 +60,7 @@ pub trait ItemsProg: Progress {
     fn start_item<I: Display>(&mut self, kind: &str, id: I) -> Self::ItemRep<'_>;
     fn skip_item(&mut self);
 }
-pub trait ItemContainerProg {
+pub trait ItemContainerProg: Progress {
     type FetchRep<'a>: FetchProg
     where
         Self: 'a;

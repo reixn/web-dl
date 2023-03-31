@@ -1,10 +1,16 @@
 pub use crate::element::author::{UserId, UserType};
 use crate::{
     element::Content,
+    item::Item,
     meta::Version,
-    raw_data::{FromRaw, RawData},
+    progress,
+    raw_data::{self, FromRaw, RawData},
+    request::Zse96V3,
+    store::BasicStoreItem,
 };
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use web_dl_base::{
     id::HasId,
     media::{HasImage, Image},
@@ -20,9 +26,9 @@ pub struct UserInfo {
     pub name: String,
     pub url_token: String,
     pub headline: String,
-    #[store(has_image)]
+    #[has_image]
     pub avatar: Image,
-    #[store(has_image)]
+    #[has_image]
     pub cover: Option<Image>,
 }
 
@@ -30,18 +36,36 @@ pub struct UserInfo {
 pub struct User {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[store(path(ext = "yaml"), has_image(error = "pass_through"))]
+    #[has_image(error = "pass_through")]
+    #[store(path(ext = "yaml"))]
     pub info: UserInfo,
-    #[store(has_image)]
+    #[has_image]
     pub description: Content,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct StoreId<'a>(pub UserId, pub &'a str);
+impl<'a> Display for StoreId<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl HasId for User {
     const TYPE: &'static str = "user";
-    type Id<'a> = UserId;
+    type Id<'a> = StoreId<'a>;
     fn id(&self) -> Self::Id<'_> {
-        self.info.id
+        StoreId(self.info.id, self.info.url_token.as_str())
+    }
+}
+impl BasicStoreItem for User {
+    fn in_store<'a>(id: Self::Id<'a>, info: &crate::store::StoreObject) -> bool {
+        info.user.contains(&id.0)
+    }
+    fn add_info(&self, info: &mut crate::store::StoreObject) {
+        info.user.insert(self.info.id);
     }
 }
 
@@ -110,3 +134,149 @@ impl super::Item for User {
             }
     }
 }
+
+mod param;
+
+impl super::ItemContainer<super::answer::Answer, super::VoidOpt> for User {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        _: super::VoidOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged_sign::<{ raw_data::Container::User }, Zse96V3, _, _>(
+                prog.start_fetch(),
+                Url::parse_with_params(
+                    format!("https://www.zhihu.com/api/v4/members/{}/answers", id.1).as_str(),
+                    &[("include", param::ANSWER_INCLUDE)],
+                )
+                .unwrap(),
+            )
+            .await
+    }
+}
+impl super::ItemContainer<super::article::Article, super::VoidOpt> for User {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        _: super::VoidOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged_sign::<{ raw_data::Container::User }, Zse96V3, _, _>(
+                prog.start_fetch(),
+                Url::parse_with_params(
+                    format!("https://www.zhihu.com/api/v4/members/{}/articles", id.1).as_str(),
+                    &[("include", param::ARTICLE_INCLUDE)],
+                )
+                .unwrap(),
+            )
+            .await
+    }
+    async fn fixup<'a, P: progress::ItemProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        _: Self::Id<'a>,
+        _: super::VoidOpt,
+        data: &mut super::article::Article,
+    ) -> Result<bool, reqwest::Error> {
+        data.fix_cover(client, prog).await.map(|_| true)
+    }
+}
+
+impl<'b> super::ItemContainer<super::column::Column, super::VoidOpt> for User {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        _: super::VoidOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged::<{ raw_data::Container::User }, _, _>(
+                prog.start_fetch(),
+                Url::parse_with_params(
+                    format!(
+                        "https://www.zhihu.com/api/v4/members/{}/column-contributions",
+                        id.1
+                    )
+                    .as_str(),
+                    &[("include", param::COLUMN_INCLUDE)],
+                )
+                .unwrap(),
+            )
+            .await
+    }
+    fn parse_item(raw_data: RawData) -> Result<super::column::Column, serde_json::Error> {
+        #[derive(Deserialize)]
+        struct Reply {
+            column: super::column::Reply,
+        }
+        Reply::deserialize(&raw_data.data)
+            .map(|r| super::column::Column::from_reply(r.column, raw_data))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CollectionOpt {
+    Created,
+    Liked,
+}
+impl Display for CollectionOpt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Created => f.write_str("created"),
+            Self::Liked => f.write_str("liked"),
+        }
+    }
+}
+impl super::ItemContainer<super::collection::Collection, CollectionOpt> for User {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        option: CollectionOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged::<{ raw_data::Container::User }, _, _>(
+                prog.start_fetch(),
+                match option {
+                    CollectionOpt::Created => Url::parse_with_params(
+                        format!("https://www.zhihu.com/api/v4/people/{}/collections", id.1)
+                            .as_str(),
+                        &[("include", param::CREATED_COLL_INCLUDE)],
+                    )
+                    .unwrap(),
+                    CollectionOpt::Liked => Url::parse_with_params(
+                        format!(
+                            "https://www.zhihu.com/api/v4/members/{}/following-favlists",
+                            id.1
+                        )
+                        .as_str(),
+                        &[("include", param::LIKED_COLL_INCLUDE)],
+                    )
+                    .unwrap(),
+                },
+            )
+            .await
+    }
+}
+
+impl super::ItemContainer<super::pin::Pin, super::VoidOpt> for User {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+        _: super::VoidOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged::<{ raw_data::Container::User }, _, _>(
+                prog.start_fetch(),
+                format!("https://www.zhihu.com/api/v4/v2/pins/{}/moments", id.1),
+            )
+            .await
+    }
+}
+
+mod activity;
+pub use activity::{ActTarget, Activity, ActivityId};
