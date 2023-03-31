@@ -37,7 +37,7 @@ pub struct CommentInfo {
     pub created_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage)]
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct Comment {
     #[store(path(ext = "yaml"))]
     pub version: Version,

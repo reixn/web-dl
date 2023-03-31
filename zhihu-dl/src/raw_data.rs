@@ -110,7 +110,7 @@ pub struct RawDataInfo {
     pub container: Container,
 }
 
-#[derive(Debug, Clone, Storable)]
+#[derive(Debug, Clone, Storable, Serialize, Deserialize)]
 pub struct RawData {
     #[store(path(ext = "yaml"))]
     pub info: RawDataInfo,

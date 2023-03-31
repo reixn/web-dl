@@ -18,7 +18,7 @@ impl Display for PinId {
 }
 
 pub const CONTENT_VERSION: Version = Version { major: 1, minor: 0 };
-#[derive(Debug, Storable, HasImage)]
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct PinContent {
     #[store(path(ext = "yaml"))]
     pub version: Version,
@@ -36,7 +36,7 @@ pub struct PinInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage)]
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct PinBody {
     #[store(path(ext = "yaml"))]
     pub info: PinInfo,
@@ -46,7 +46,7 @@ pub struct PinBody {
 
 pub const VERSION: Version = Version { major: 1, minor: 0 };
 
-#[derive(Debug, Storable, HasImage)]
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct Pin {
     #[store(path(ext = "yaml"))]
     pub version: Version,

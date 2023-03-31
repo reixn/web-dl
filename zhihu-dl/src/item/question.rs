@@ -31,7 +31,7 @@ pub struct QuestionInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage)]
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct Question {
     #[store(path(ext = "yaml"))]
     pub version: Version,

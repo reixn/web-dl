@@ -28,7 +28,7 @@ pub struct CollectionInfo {
 }
 
 pub const VERSION: Version = Version { major: 1, minor: 0 };
-#[derive(Debug, Storable, HasImage)]
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct Collection {
     #[store(path(ext = "yaml"))]
     pub version: Version,

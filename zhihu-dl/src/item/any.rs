@@ -3,7 +3,7 @@ use crate::{
     raw_data::RawData,
     store::StoreItem,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fmt::Display, path::PathBuf};
 use web_dl_base::{id::HasId, media::HasImage};
 
@@ -25,14 +25,14 @@ impl<'a> Display for AnyId<'a> {
         }
     }
 }
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct OtherItem {
     pub id: u64,
     #[serde(rename = "type")]
     pub item_type: String,
 }
 
-#[derive(Debug, HasImage)]
+#[derive(Debug, HasImage, Serialize, Deserialize)]
 pub enum Any {
     Answer(#[has_image] answer::Answer),
     Article(#[has_image] article::Article),

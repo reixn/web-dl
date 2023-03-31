@@ -32,7 +32,7 @@ pub struct UserInfo {
     pub cover: Option<Image>,
 }
 
-#[derive(Debug, Storable, HasImage)]
+#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct User {
     #[store(path(ext = "yaml"))]
     pub version: Version,

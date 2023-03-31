@@ -13,7 +13,7 @@ use crate::{
     request::Zse96V3,
     store::{LinkInfo, Store, StoreItem},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fmt::Display, path::PathBuf};
 use web_dl_base::{id::HasId, media::HasImage};
 
@@ -51,7 +51,7 @@ impl<'a> Display for ActivityId<'a> {
     }
 }
 
-#[derive(Debug, HasImage)]
+#[derive(Debug, HasImage, Serialize, Deserialize)]
 pub enum ActTarget {
     Answer(#[has_image] Answer),
     Article(#[has_image] Article),
@@ -89,7 +89,7 @@ pub struct Reply {
     target: TargetReply,
 }
 
-#[derive(Debug, HasImage)]
+#[derive(Debug, HasImage, Serialize, Deserialize)]
 pub struct Activity {
     pub id: u64,
     #[has_image(error = "pass_through")]

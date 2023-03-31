@@ -24,7 +24,7 @@ pub struct ContentInfo {
     pub images: Vec<ImageRef>,
 }
 
-#[derive(Debug, Clone, Storable, HasImage)]
+#[derive(Debug, Clone, Storable, HasImage, Serialize, Deserialize)]
 pub struct Content {
     #[store(path(ext = "yaml"))]
     pub version: Version,
