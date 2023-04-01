@@ -45,7 +45,7 @@ struct InputRecv {
     data: Data<(), FieldSpec>,
 }
 
-macro_rules! external {
+macro_rules! support {
     ($i:ident) => {
         quote!(::web_dl_base::storable::macro_export::$i)
     };
@@ -57,9 +57,9 @@ macro_rules! exported {
 }
 
 fn gen_impl(name: Ident, load: TokenStream, store: TokenStream) -> proc_macro::TokenStream {
-    let p = external!(Path);
-    let as_ref = external!(AsRef);
-    let res = external!(Result);
+    let p = support!(Path);
+    let as_ref = support!(AsRef);
+    let res = support!(Result);
     let t_name = exported!(Storable);
     let opt = exported!(LoadOpt);
     let err = exported!(Error);
@@ -80,10 +80,10 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
     let input = InputRecv::from_derive_input(&parse_macro_input!(input as DeriveInput)).unwrap();
     match input.format {
         StoreFormat::Directory => {
-            let res = external!(Result);
-            let load_chain = exported!(load_chained);
-            let store_chain = exported!(store_chained);
-            let push_path = exported!(push_path);
+            let res = support!(Result);
+            let load_chain = support!(load_chained);
+            let store_chain = support!(store_chained);
+            let push_path = support!(push_path);
             let mut load_fields: Punctuated<FieldValue, Comma> = Punctuated::new();
             let mut store_fields = Vec::new();
             for i in input.data.take_struct().unwrap() {
@@ -123,7 +123,7 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
                     #store_chain(&self.#id, #path, #id_str)
                 });
             }
-            let create_dir = exported!(create_dir_missing);
+            let create_dir = support!(create_dir_missing);
             gen_impl(
                 input.ident,
                 quote! {
@@ -150,8 +150,8 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
             )
         }
         StoreFormat::Yaml => {
-            let load = exported!(load_yaml);
-            let store = exported!(store_yaml);
+            let load = support!(load_yaml);
+            let store = support!(store_yaml);
             gen_impl(
                 input.ident,
                 quote! {#load(path)},
@@ -159,8 +159,8 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
             )
         }
         StoreFormat::Json => {
-            let load = exported!(load_json);
-            let store = exported!(store_json);
+            let load = support!(load_json);
+            let store = support!(store_json);
             gen_impl(
                 input.ident,
                 quote! {#load(path)},

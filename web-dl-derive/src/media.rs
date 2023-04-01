@@ -36,7 +36,7 @@ impl FromField for FieldSpec {
     }
 }
 
-macro_rules! external {
+macro_rules! support {
     ($i:ident) => {
         quote!(::web_dl_base::media::macro_export::$i)
     };
@@ -60,7 +60,7 @@ fn gen_expr(info: &FieldInfo, is_load: bool, is_last: bool) -> TokenStream {
         match info.spec.error {
             ErrSpec::Chained => {
                 if is_load {
-                    let f = exported!(load_img_chained);
+                    let f = support!(load_img_chained);
                     let e = if info.is_ref {
                         info.expr.clone()
                     } else {
@@ -68,7 +68,7 @@ fn gen_expr(info: &FieldInfo, is_load: bool, is_last: bool) -> TokenStream {
                     };
                     quote!(#f(#e, __loader, #name))
                 } else {
-                    let f = exported!(store_img_chained);
+                    let f = support!(store_img_chained);
                     let e = if info.is_ref {
                         info.expr.clone()
                     } else {
@@ -95,7 +95,7 @@ fn gen_expr(info: &FieldInfo, is_load: bool, is_last: bool) -> TokenStream {
 
 fn gen_exprs(fields: &Vec<FieldInfo>, is_load: bool) -> TokenStream {
     if fields.is_empty() {
-        let res = external!(Result);
+        let res = support!(Result);
         return quote!(#res::Ok(()));
     }
     let mut ret = TokenStream::new();
@@ -122,7 +122,7 @@ fn gen_impl(
     r_set_impl: TokenStream,
 ) -> proc_macro::TokenStream {
     let t_name = exported!(HasImage);
-    let res = external!(Result);
+    let res = support!(Result);
     let err = exported!(Error);
     let loader = exported!(Loader);
     let storer = exported!(Storer);
@@ -146,7 +146,7 @@ fn gen_impl(
     .into()
 }
 fn unit_impl(name: Ident) -> proc_macro::TokenStream {
-    let res = external!(Result);
+    let res = support!(Result);
     gen_impl(
         name,
         quote!(#res::Ok(())),
@@ -234,7 +234,7 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             if e.variants.is_empty() {
                 return unit_impl(input.ident);
             }
-            let res = external!(Result);
+            let res = support!(Result);
             let mut load_image = TokenStream::new();
             let mut store_image = TokenStream::new();
             let mut image_ref = TokenStream::new();

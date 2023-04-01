@@ -1,3 +1,4 @@
+#![feature(adt_const_params)]
 #![feature(async_fn_in_trait)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(maybe_uninit_array_assume_init)]

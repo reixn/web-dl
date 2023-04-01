@@ -13,9 +13,7 @@ pub use hash::HashDigest;
 
 mod store;
 pub use store::{Loader, RefSet, Storer};
-pub mod macro_export {
-    pub use std::{option::Option, result::Result, string::String};
-}
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -39,25 +37,33 @@ pub trait HasImage {
 }
 pub use web_dl_derive::HasImage;
 
-pub fn load_img_chained<I: HasImage, C: Display>(
-    field: &mut I,
-    loader: &mut Loader,
-    context: C,
-) -> Result<(), Error> {
-    field.load_images(loader).map_err(|e| Error::Chained {
-        field: context.to_string(),
-        source: Box::new(e),
-    })
-}
-pub fn store_img_chained<I: HasImage, C: Display>(
-    field: &I,
-    storer: &mut Storer,
-    context: C,
-) -> Result<(), Error> {
-    field.store_images(storer).map_err(|e| Error::Chained {
-        field: context.to_string(),
-        source: Box::new(e),
-    })
+#[doc(hidden)]
+/// private module, for derive macro only
+pub mod macro_export {
+    use super::{Error, HasImage, Loader, Storer};
+    use std::fmt::Display;
+    pub use std::{option::Option, result::Result, string::String};
+
+    pub fn load_img_chained<I: HasImage, C: Display>(
+        field: &mut I,
+        loader: &mut Loader,
+        context: C,
+    ) -> Result<(), Error> {
+        field.load_images(loader).map_err(|e| Error::Chained {
+            field: context.to_string(),
+            source: Box::new(e),
+        })
+    }
+    pub fn store_img_chained<I: HasImage, C: Display>(
+        field: &I,
+        storer: &mut Storer,
+        context: C,
+    ) -> Result<(), Error> {
+        field.store_images(storer).map_err(|e| Error::Chained {
+            field: context.to_string(),
+            source: Box::new(e),
+        })
+    }
 }
 
 impl<I: HasImage> HasImage for Option<I> {

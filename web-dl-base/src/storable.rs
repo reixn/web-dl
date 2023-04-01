@@ -60,53 +60,6 @@ pub enum Error {
     },
 }
 
-pub fn create_dir_missing(path: &Path) -> Result<(), Error> {
-    if !path.exists() {
-        fs::create_dir_all(path).map_err(|e| Error::Io {
-            op: IoErrorOp::CreateDir,
-            path: path.to_path_buf(),
-            source: e,
-        })
-    } else {
-        Ok(())
-    }
-}
-pub fn create_file<P: AsRef<Path>>(path: P) -> Result<fs::File, Error> {
-    fs::File::create(path.as_ref()).map_err(|e| Error::Io {
-        op: IoErrorOp::CreateFile,
-        path: path.as_ref().to_path_buf(),
-        source: e,
-    })
-}
-pub fn open_file<P: AsRef<Path>>(path: P) -> Result<fs::File, Error> {
-    fs::File::open(path.as_ref()).map_err(|e| Error::Io {
-        op: IoErrorOp::OpenFile,
-        path: path.as_ref().to_path_buf(),
-        source: e,
-    })
-}
-pub fn load_yaml<D: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<D, Error> {
-    serde_yaml::from_reader::<_, D>(io::BufReader::new(open_file(path)?)).map_err(Error::Yaml)
-}
-pub fn load_json<D: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<D, Error> {
-    serde_json::from_reader::<_, D>(io::BufReader::new(open_file(path)?)).map_err(Error::Json)
-}
-pub fn store_yaml<D: serde::Serialize, P: AsRef<Path>>(value: &D, path: P) -> Result<(), Error> {
-    serde_yaml::to_writer(io::BufWriter::new(create_file(path)?), value).map_err(Error::Yaml)
-}
-pub fn store_json<D: serde::Serialize, P: AsRef<Path>>(value: &D, path: P) -> Result<(), Error> {
-    serde_json::to_writer_pretty(io::BufWriter::new(create_file(path)?), value).map_err(Error::Json)
-}
-pub fn push_path<P: AsRef<Path>>(path: P, value: &str) -> PathBuf {
-    let mut ret = path.as_ref().to_path_buf();
-    ret.push(value);
-    ret
-}
-
-pub mod macro_export {
-    pub use std::{self, convert::AsRef, path::Path, result::Result, string::String};
-}
-
 #[derive(Debug, Default, Clone, Copy)]
 pub struct LoadOpt {
     pub load_raw: bool,
@@ -116,26 +69,89 @@ pub trait Storable: Sized {
     fn load<P: AsRef<Path>>(path: P, load_opt: LoadOpt) -> Result<Self, Error>;
     fn store<P: AsRef<Path>>(&self, path: P) -> Result<(), Error>;
 }
-pub fn load_chained<S: Storable, P: AsRef<Path>, C: Display>(
-    path: P,
-    load_opt: LoadOpt,
-    context: C,
-) -> Result<S, Error> {
-    S::load(path, load_opt).map_err(|e| Error::Chained {
-        field: context.to_string(),
-        source: Box::new(e),
-    })
+
+#[doc(hidden)]
+/// private module, for derive macro only
+pub mod macro_export {
+    use super::{Error, IoErrorOp, LoadOpt, Storable};
+    pub use std::{
+        self, convert::AsRef, default::Default, path::Path, result::Result, string::String,
+    };
+    use std::{fmt::Display, fs, io, path::PathBuf};
+
+    pub fn create_dir_missing(path: &Path) -> Result<(), Error> {
+        if !path.exists() {
+            fs::create_dir_all(path).map_err(|e| Error::Io {
+                op: IoErrorOp::CreateDir,
+                path: path.to_path_buf(),
+                source: e,
+            })
+        } else {
+            Ok(())
+        }
+    }
+    pub fn push_path<P: AsRef<Path>>(path: P, value: &str) -> PathBuf {
+        let mut ret = path.as_ref().to_path_buf();
+        ret.push(value);
+        ret
+    }
+    pub fn load_chained<S: Storable, P: AsRef<Path>, C: Display>(
+        path: P,
+        load_opt: LoadOpt,
+        context: C,
+    ) -> Result<S, Error> {
+        S::load(path, load_opt).map_err(|e| Error::Chained {
+            field: context.to_string(),
+            source: Box::new(e),
+        })
+    }
+    pub fn store_chained<S: Storable, P: AsRef<Path>, C: Display>(
+        value: &S,
+        path: P,
+        context: C,
+    ) -> Result<(), Error> {
+        value.store(path).map_err(|e| Error::Chained {
+            field: context.to_string(),
+            source: Box::new(e),
+        })
+    }
+
+    pub fn create_file<P: AsRef<Path>>(path: P) -> Result<fs::File, Error> {
+        fs::File::create(path.as_ref()).map_err(|e| Error::Io {
+            op: IoErrorOp::CreateFile,
+            path: path.as_ref().to_path_buf(),
+            source: e,
+        })
+    }
+    pub fn open_file<P: AsRef<Path>>(path: P) -> Result<fs::File, Error> {
+        fs::File::open(path.as_ref()).map_err(|e| Error::Io {
+            op: IoErrorOp::OpenFile,
+            path: path.as_ref().to_path_buf(),
+            source: e,
+        })
+    }
+    pub fn load_yaml<D: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<D, Error> {
+        serde_yaml::from_reader::<_, D>(io::BufReader::new(open_file(path)?)).map_err(Error::Yaml)
+    }
+    pub fn load_json<D: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<D, Error> {
+        serde_json::from_reader::<_, D>(io::BufReader::new(open_file(path)?)).map_err(Error::Json)
+    }
+    pub fn store_yaml<D: serde::Serialize, P: AsRef<Path>>(
+        value: &D,
+        path: P,
+    ) -> Result<(), Error> {
+        serde_yaml::to_writer(io::BufWriter::new(create_file(path)?), value).map_err(Error::Yaml)
+    }
+    pub fn store_json<D: serde::Serialize, P: AsRef<Path>>(
+        value: &D,
+        path: P,
+    ) -> Result<(), Error> {
+        serde_json::to_writer_pretty(io::BufWriter::new(create_file(path)?), value)
+            .map_err(Error::Json)
+    }
 }
-pub fn store_chained<S: Storable, P: AsRef<Path>, C: Display>(
-    value: &S,
-    path: P,
-    context: C,
-) -> Result<(), Error> {
-    value.store(path).map_err(|e| Error::Chained {
-        field: context.to_string(),
-        source: Box::new(e),
-    })
-}
+use macro_export::{create_dir_missing, push_path};
+
 pub use web_dl_derive::Storable;
 
 impl Storable for String {
@@ -156,6 +172,14 @@ impl Storable for String {
         })
     }
 }
+impl Storable for serde_json::Value {
+    fn load<P: AsRef<Path>>(path: P, _: LoadOpt) -> Result<Self, Error> {
+        macro_export::load_json(path)
+    }
+    fn store<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        macro_export::store_json(self, path)
+    }
+}
 impl<I: Storable> Storable for Option<I> {
     fn load<P: AsRef<Path>>(path: P, load_opt: LoadOpt) -> Result<Self, Error> {
         let path = path.as_ref();
@@ -170,14 +194,6 @@ impl<I: Storable> Storable for Option<I> {
             Some(i) => i.store(path),
             None => Ok(()),
         }
-    }
-}
-impl Storable for serde_json::Value {
-    fn load<P: AsRef<Path>>(path: P, _: LoadOpt) -> Result<Self, Error> {
-        load_json(path)
-    }
-    fn store<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        store_json(self, path)
     }
 }
 impl<I: HasId + Storable> Storable for Vec<I> {
