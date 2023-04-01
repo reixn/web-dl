@@ -228,7 +228,9 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Image {
+    #[serde(rename = "url")]
     Url(String),
+    #[serde(rename = "ref")]
     Ref(ImageRef),
 }
 impl HasImage for Image {
