@@ -4,7 +4,7 @@ use crate::{
     progress,
     raw_data::{self, RawData, RawDataInfo},
     request::Client,
-    store::{BasicStoreItem, Store, StoreError, StoreItem},
+    store::{BasicStoreItem, LinkInfo, Store, StoreError, StoreItem},
 };
 use chrono::Utc;
 use serde::Deserialize;
@@ -270,6 +270,23 @@ impl Driver {
         Ok((ret, dest))
     }
 
+    pub async fn get_item<'a, I, P>(
+        &mut self,
+        prog: &P,
+        id: <I as HasId>::Id<'a>,
+        get_comment: bool,
+    ) -> Result<Option<I>, ItemError>
+    where
+        I: Fetchable + Item + media::HasImage + BasicStoreItem,
+        P: progress::ItemProg,
+    {
+        Ok(if <I as StoreItem>::in_store(id, &self.store) {
+            None
+        } else {
+            Some(self.update_item_impl(prog, id, get_comment).await?.0)
+        })
+    }
+
     pub async fn download_item<'a, I, P, Pat>(
         &mut self,
         prog: &P,
@@ -289,11 +306,7 @@ impl Driver {
             dest.push(name);
             dest
         };
-        let v = if <I as StoreItem>::in_store(id, &self.store) {
-            None
-        } else {
-            Some(self.update_item_impl(prog, id, get_comment).await?.0)
-        };
+        let v = self.get_item(prog, id, get_comment).await?;
         let store_path = self.store.store_path::<I>(id);
         match link_to_dest(relative, store_path.as_path(), &canon_dest) {
             Ok(_) => Ok(v),
@@ -318,23 +331,21 @@ impl Driver {
             .await
             .map(|r| r.0)
     }
-    pub async fn download_container<'a, IC, I, O, P, Pat>(
+
+    async fn get_container_impl<'a, IC, I, O, P>(
         &mut self,
         prog: &P,
         id: <IC as HasId>::Id<'a>,
         option: O,
         get_comment: bool,
-        relative: bool,
-        dest: Pat,
-    ) -> Result<Vec<ContainerItem<I>>, ContainerError>
+        canon_dest: Option<PathBuf>,
+    ) -> Result<(Vec<ContainerItem<I>>, Vec<(usize, LinkInfo)>), ContainerError>
     where
         I: Item + StoreItem + media::HasImage,
         O: Display + Copy,
         IC: ItemContainer<I, O>,
         P: progress::ItemContainerProg,
-        Pat: AsRef<Path>,
     {
-        let canon_dest = prepare_dest(dest.as_ref()).map_err(ContainerError::from)?;
         let dat = IC::fetch_items(&self.client, prog, id, option)
             .await
             .map_err(ContainerError::from)?;
@@ -371,20 +382,60 @@ impl Driver {
                         source: ItemError::Store(e),
                     })?
                 {
-                    self.store
-                        .add_media(&item)
-                        .map_err(|e| ContainerError::Item {
-                            id: item.id().to_string(),
-                            source: ItemError::Media(e),
-                        })?;
                     link_path.push((idx, v));
                 }
+                self.store
+                    .add_media(&item)
+                    .map_err(|e| ContainerError::Item {
+                        id: item.id().to_string(),
+                        source: ItemError::Media(e),
+                    })?;
                 ret.push(ContainerItem {
                     processed: true,
                     value: item,
                 });
             }
         }
+        Ok((ret, link_path))
+    }
+
+    pub async fn get_container<'a, IC, I, O, P>(
+        &mut self,
+        prog: &P,
+        id: <IC as HasId>::Id<'a>,
+        option: O,
+        get_comment: bool,
+    ) -> Result<Vec<ContainerItem<I>>, ContainerError>
+    where
+        I: Item + StoreItem + media::HasImage,
+        O: Display + Copy,
+        IC: ItemContainer<I, O>,
+        P: progress::ItemContainerProg,
+    {
+        self.get_container_impl::<IC, I, O, P>(prog, id, option, get_comment, None)
+            .await
+            .map(|r| r.0)
+    }
+    pub async fn download_container<'a, IC, I, O, P, Pat>(
+        &mut self,
+        prog: &P,
+        id: <IC as HasId>::Id<'a>,
+        option: O,
+        get_comment: bool,
+        relative: bool,
+        dest: Pat,
+    ) -> Result<Vec<ContainerItem<I>>, ContainerError>
+    where
+        I: Item + StoreItem + media::HasImage,
+        O: Display + Copy,
+        IC: ItemContainer<I, O>,
+        P: progress::ItemContainerProg,
+        Pat: AsRef<Path>,
+    {
+        let canon_dest = prepare_dest(dest.as_ref()).map_err(ContainerError::from)?;
+        let (ret, link_path) = self
+            .get_container_impl::<IC, I, O, P>(prog, id, option, get_comment, Some(canon_dest))
+            .await?;
         for (idx, li) in link_path {
             link_to_dest(relative, li.source.as_path(), li.link.as_path()).map_err(|e| {
                 ContainerError::Item {

@@ -123,7 +123,7 @@ impl StoreItem for Activity {
         }
         target!(Answer, Article, Collection, Column, Question, Pin)
     }
-    fn link_info(id: Self::Id<'_>, store: &Store, dest: PathBuf) -> Option<LinkInfo> {
+    fn link_info(id: Self::Id<'_>, store: &Store, dest: Option<PathBuf>) -> Option<LinkInfo> {
         macro_rules! target {
             ($($t:ident),+) => {
                 match id.target {
@@ -137,7 +137,7 @@ impl StoreItem for Activity {
     fn save_data(
         &self,
         store: &mut crate::store::Store,
-        dest: PathBuf,
+        dest: Option<PathBuf>,
     ) -> Result<Option<LinkInfo>, web_dl_base::storable::Error> {
         macro_rules! target {
             ($($t:ident),+) => {

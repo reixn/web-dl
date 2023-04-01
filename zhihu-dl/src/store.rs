@@ -163,11 +163,11 @@ pub struct LinkInfo {
 }
 pub trait StoreItem: HasId {
     fn in_store(id: Self::Id<'_>, store: &Store) -> bool;
-    fn link_info(id: Self::Id<'_>, store: &Store, dest: PathBuf) -> Option<LinkInfo>;
+    fn link_info(id: Self::Id<'_>, store: &Store, dest: Option<PathBuf>) -> Option<LinkInfo>;
     fn save_data(
         &self,
         store: &mut Store,
-        dest: PathBuf,
+        dest: Option<PathBuf>,
     ) -> Result<Option<LinkInfo>, storable::Error>;
 }
 
@@ -175,8 +175,8 @@ impl<I: BasicStoreItem> StoreItem for I {
     fn in_store(id: Self::Id<'_>, store: &Store) -> bool {
         <Self as BasicStoreItem>::in_store(id, &store.objects)
     }
-    fn link_info(id: Self::Id<'_>, store: &Store, dest: PathBuf) -> Option<LinkInfo> {
-        Some(LinkInfo {
+    fn link_info(id: Self::Id<'_>, store: &Store, dest: Option<PathBuf>) -> Option<LinkInfo> {
+        dest.map(|dest| LinkInfo {
             source: store.store_path::<Self>(id),
             link: item_path::<Self>(id, dest),
         })
@@ -184,13 +184,12 @@ impl<I: BasicStoreItem> StoreItem for I {
     fn save_data(
         &self,
         store: &mut Store,
-        dest: PathBuf,
+        dest: Option<PathBuf>,
     ) -> Result<Option<LinkInfo>, storable::Error> {
-        store.add_object(self).map(|v| {
-            Some(LinkInfo {
-                source: v,
-                link: item_path::<Self>(self.id(), dest),
-            })
-        })
+        let source = store.add_object(self)?;
+        Ok(dest.map(|dest| LinkInfo {
+            source,
+            link: item_path::<Self>(self.id(), dest),
+        }))
     }
 }

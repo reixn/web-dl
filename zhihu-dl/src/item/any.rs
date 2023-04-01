@@ -63,7 +63,7 @@ impl StoreItem for Any {
     fn link_info(
         id: Self::Id<'_>,
         store: &crate::store::Store,
-        dest: PathBuf,
+        dest: Option<PathBuf>,
     ) -> Option<crate::store::LinkInfo> {
         match id {
             AnyId::Answer(a) => answer::Answer::link_info(a, store, dest),
@@ -74,7 +74,7 @@ impl StoreItem for Any {
     fn save_data(
         &self,
         store: &mut crate::store::Store,
-        dest: PathBuf,
+        dest: Option<PathBuf>,
     ) -> Result<Option<crate::store::LinkInfo>, web_dl_base::storable::Error> {
         match self {
             Any::Answer(a) => a.save_data(store, dest),
