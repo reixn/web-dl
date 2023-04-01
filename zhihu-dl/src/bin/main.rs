@@ -714,17 +714,21 @@ async fn run_cli(
     )
     .context("failed to create editor")?;
     loop {
-        match editor
+        let input = match editor
             .readline("zhihu-dl > ")
             .map_err(anyhow::Error::new)
             .and_then(|s| shlex::split(s.as_str()).context("erroneous quoting"))
-            .and_then(|v| {
-                Command::augment_subcommands(clap::Command::new("repl").multicall(true))
-                    .subcommand_required(true)
-                    .try_get_matches_from(v.into_iter())
-                    .map_err(anyhow::Error::new)
-            })
-            .and_then(|am| Command::from_arg_matches(&am).map_err(anyhow::Error::new))
+        {
+            Ok(i) => i,
+            Err(e) => {
+                output.write_error(e);
+                continue;
+            }
+        };
+        match Command::augment_subcommands(clap::Command::new("repl").multicall(true))
+            .subcommand_required(true)
+            .try_get_matches_from(input.into_iter())
+            .and_then(|am| Command::from_arg_matches(&am))
         {
             Ok(cmd) => match cmd.run(&mut driver, output, reporter).await {
                 Ok(true) => break,
@@ -733,7 +737,9 @@ async fn run_cli(
                     output.write_error(e);
                 }
             },
-            Err(e) => output.write_error(e),
+            Err(e) => output
+                .progress_bar
+                .suspend(|| println!("{}", e.render().ansi())),
         }
     }
     Ok(())
