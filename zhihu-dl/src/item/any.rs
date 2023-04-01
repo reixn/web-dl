@@ -68,7 +68,15 @@ impl StoreItem for Any {
         match id {
             AnyId::Answer(a) => answer::Answer::link_info(a, store, dest),
             AnyId::Article(a) => article::Article::link_info(a, store, dest),
-            AnyId::Other(_) => None,
+            AnyId::Other(i) => {
+                match i {
+                    Some(it) => {
+                        log::warn!("skipped unrecognized object ({} {})", it.item_type, it.id)
+                    }
+                    None => log::warn!("skipped unrecognized object (unknown id,type)"),
+                }
+                None
+            }
         }
     }
     fn save_data(
@@ -79,7 +87,20 @@ impl StoreItem for Any {
         match self {
             Any::Answer(a) => a.save_data(store, dest),
             Any::Article(a) => a.save_data(store, dest),
-            Any::Other { .. } => Ok(None),
+            Any::Other { item, raw_data } => {
+                match item {
+                    Some(it) => {
+                        log::warn!(
+                            "skipped storing unrecognized object ({} {})",
+                            it.item_type,
+                            it.id
+                        )
+                    }
+                    None => log::warn!("skipped storing unrecognized object (unknown id,type)"),
+                }
+                log::trace!("ignored object raw data: {:#?}", raw_data);
+                Ok(None)
+            }
         }
     }
 }

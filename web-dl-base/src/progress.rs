@@ -1,7 +1,6 @@
 use std::fmt::Display;
 
 pub trait Progress {
-    fn suspend<F: FnOnce()>(&self, f: F);
     async fn sleep(&self, duration: std::time::Duration);
 }
 

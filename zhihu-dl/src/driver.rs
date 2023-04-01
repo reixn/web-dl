@@ -181,6 +181,11 @@ fn link_to_dest(relative: bool, store_path: &Path, dest: &Path) -> Result<(), Li
                 _ => unreachable!(),
             }
         }
+        log::debug!(
+            "relative path of {}: {}",
+            ret.display(),
+            store_path.display()
+        );
         ret
     };
     symlink(&link_source, dest).map_err(|e| LinkError::SymLink {
@@ -199,25 +204,33 @@ pub struct ContainerItem<I> {
 pub struct Driver {
     pub client: Client,
     pub store: Store,
+    initialized: bool,
 }
 impl Driver {
     pub fn create<P: AsRef<Path>>(store_path: P) -> Result<Self, StoreError> {
         Ok(Self {
             client: Client::new(),
             store: Store::create(store_path)?,
+            initialized: false,
         })
     }
     pub fn open<P: AsRef<Path>>(store_path: P) -> Result<Self, StoreError> {
         Ok(Self {
             client: Client::new(),
             store: Store::open(store_path)?,
+            initialized: false,
         })
     }
     pub fn save(&self) -> Result<(), StoreError> {
         self.store.save()
     }
-    pub async fn init(&self) -> Result<(), reqwest::Error> {
-        self.client.init().await
+    pub async fn init(&mut self) -> Result<(), reqwest::Error> {
+        self.client.init().await?;
+        self.initialized = true;
+        Ok(())
+    }
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
     }
 
     pub async fn process_item<I: Item, P: progress::ItemProg>(
@@ -226,11 +239,12 @@ impl Driver {
         item: &mut I,
         get_comment: bool,
     ) -> Result<(), ItemError> {
-        log::debug!("processing {} {}", I::TYPE, item.id());
+        log::info!("getting images for {} {}", I::TYPE, item.id());
         if item.get_images(&self.client, prog).await {
             prog.sleep(self.client.request_interval).await;
         }
         if get_comment {
+            log::info!("getting comments for {} {}", I::TYPE, item.id());
             item.get_comments(&self.client, prog)
                 .await
                 .map_err(ItemError::from)?;
@@ -250,7 +264,7 @@ impl Driver {
         P: progress::ItemProg,
     {
         let mut ret: I = {
-            log::debug!("fetching raw data for {} {}", I::TYPE, id);
+            log::info!("fetching raw data for {} {}", I::TYPE, id);
             let data = I::fetch(&self.client, id).await.map_err(ItemError::from)?;
             log::trace!("raw data {:#?}", data);
             I::from_reply(
@@ -265,7 +279,9 @@ impl Driver {
             )
         };
         self.process_item(prog, &mut ret, get_comment).await?;
+        log::info!("add item {} {} to store", I::TYPE, ret.id());
         let dest = self.store.add_object(&ret).map_err(ItemError::from)?;
+        log::debug!("store path: {}", dest.display());
         self.store.add_media(&ret).map_err(ItemError::from)?;
         Ok((ret, dest))
     }
@@ -308,6 +324,13 @@ impl Driver {
         };
         let v = self.get_item(prog, id, get_comment).await?;
         let store_path = self.store.store_path::<I>(id);
+        log::info!(
+            "link {} {} ({}) to {}",
+            I::TYPE,
+            id,
+            store_path.display(),
+            parent.as_ref().join(name).display()
+        );
         match link_to_dest(relative, store_path.as_path(), &canon_dest) {
             Ok(_) => Ok(v),
             Err(e) => Err(ItemError::Link {
@@ -346,6 +369,13 @@ impl Driver {
         IC: ItemContainer<I, O>,
         P: progress::ItemContainerProg,
     {
+        log::info!(
+            "fetching container items for {} in {} {} ({})",
+            I::TYPE,
+            IC::TYPE,
+            id,
+            option
+        );
         let dat = IC::fetch_items(&self.client, prog, id, option)
             .await
             .map_err(ContainerError::from)?;
@@ -355,7 +385,8 @@ impl Driver {
             let mut p = prog.start_items(dat.len() as u64);
             for (idx, i) in dat.into_iter().enumerate() {
                 use progress::ItemsProg;
-                log::trace!("parsing response {:#?}", i);
+                log::info!("parsing api response of {}", idx);
+                log::trace!("api response {:#?}", i);
                 let mut item = IC::parse_item(i).map_err(ContainerError::from)?;
                 if I::in_store(item.id(), &self.store) {
                     if let Some(li) = I::link_info(item.id(), &self.store, canon_dest.clone()) {
@@ -375,6 +406,7 @@ impl Driver {
                         id: item.id().to_string(),
                         source: e,
                     })?;
+                log::info!("add {} {} to store", I::TYPE, item.id());
                 if let Some(v) = item
                     .save_data(&mut self.store, canon_dest.clone())
                     .map_err(|e| ContainerError::Item {
@@ -382,6 +414,7 @@ impl Driver {
                         source: ItemError::Store(e),
                     })?
                 {
+                    log::debug!("store path: {}", v.source.display());
                     link_path.push((idx, v));
                 }
                 self.store
@@ -390,6 +423,14 @@ impl Driver {
                         id: item.id().to_string(),
                         source: ItemError::Media(e),
                     })?;
+                log::info!(
+                    "finished processing {} {} in {} {} ({})",
+                    I::TYPE,
+                    item.id(),
+                    IC::TYPE,
+                    id,
+                    option
+                );
                 ret.push(ContainerItem {
                     processed: true,
                     value: item,
@@ -437,6 +478,13 @@ impl Driver {
             .get_container_impl::<IC, I, O, P>(prog, id, option, get_comment, Some(canon_dest))
             .await?;
         for (idx, li) in link_path {
+            log::info!(
+                "linking {} {} ({}) to {}",
+                I::TYPE,
+                ret[idx].value.id(),
+                li.source.display(),
+                li.link.display()
+            );
             link_to_dest(relative, li.source.as_path(), li.link.as_path()).map_err(|e| {
                 ContainerError::Item {
                     id: ret[idx].value.id().to_string(),

@@ -38,9 +38,6 @@ async fn start_sleep(multi_progress: &MultiProgress, duration: std::time::Durati
     multi_progress.remove(&pb);
 }
 impl<'a> Progress for SubProgress<'a> {
-    fn suspend<F: FnOnce()>(&self, f: F) {
-        self.multi_progress.suspend(f)
-    }
     async fn sleep(&self, duration: std::time::Duration) {
         start_sleep(self.multi_progress, duration).await
     }
@@ -115,9 +112,6 @@ pub struct SubWrapper<'a>(pub &'a MultiProgress);
 impl<'a> Progress for SubWrapper<'a> {
     async fn sleep(&self, duration: std::time::Duration) {
         start_sleep(self.0, duration).await;
-    }
-    fn suspend<F: FnOnce()>(&self, f: F) {
-        self.0.suspend(f);
     }
 }
 
@@ -242,15 +236,12 @@ impl<'a> ItemContainerProg for SubWrapper<'a> {
 }
 
 pub struct ProgressReporter {
-    multi_progress: MultiProgress,
+    pub multi_progress: MultiProgress,
     progress_bar: ProgressBar,
 }
 impl Progress for ProgressReporter {
     async fn sleep(&self, duration: std::time::Duration) {
         start_sleep(&self.multi_progress, duration).await
-    }
-    fn suspend<F: FnOnce()>(&self, f: F) {
-        self.multi_progress.suspend(f)
     }
 }
 impl Drop for ProgressReporter {

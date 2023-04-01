@@ -24,4 +24,4 @@ pub mod meta;
 pub mod progress;
 pub mod raw_data;
 pub mod request;
-pub(crate) mod store;
+pub mod store;

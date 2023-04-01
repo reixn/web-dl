@@ -1,7 +1,4 @@
-use crate::{
-    id,
-    progress::{self, Progress},
-};
+use crate::{id, progress};
 use mime2ext::mime2ext;
 use mime_classifier::{ApacheBugFlag, LoadContext, MimeClassifier, NoSniffFlag};
 use reqwest::{Client, Url};
@@ -221,7 +218,7 @@ where
                 ret.push(re);
             }
             Err(e) => {
-                prog.suspend(|| log::warn!("failed to fetch image: {}", e));
+                log::warn!("failed to fetch image: {}", e);
             }
         }
     }
@@ -269,7 +266,7 @@ impl Image {
                 let url = match Url::parse(u.as_str()) {
                     Ok(v) => v,
                     Err(e) => {
-                        images_prog.suspend(|| log::warn!("failed to parse url {}: {}", u, e));
+                        log::warn!("failed to parse url {}: {}", u, e);
                         images_prog.skip();
                         return false;
                     }
@@ -277,7 +274,7 @@ impl Image {
                 let mut prog = images_prog.start_image(&url);
                 match fetch_image(client, &mut prog, url).await {
                     Ok(r) => *self = Self::Ref(r),
-                    Err(e) => prog.suspend(|| log::warn!("failed to fetch image {}", e)),
+                    Err(e) => log::warn!("failed to fetch image {}", e),
                 }
                 true
             }

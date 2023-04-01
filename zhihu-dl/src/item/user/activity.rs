@@ -128,7 +128,13 @@ impl StoreItem for Activity {
             ($($t:ident),+) => {
                 match id.target {
                     $(ActTargetId::$t(t) => $t::link_info(t, store, dest),)+
-                    ActTargetId::Other(_) => None
+                    ActTargetId::Other(it) => {
+                        match it {
+                            Some(it) => log::warn!("skipped unrecognized object ({} {})", it.item_type, it.id),
+                            None => log::warn!("skipped unrecognized object (unknown type,id)")
+                        }
+                        None
+                    }
                 }
             };
         }
@@ -143,7 +149,14 @@ impl StoreItem for Activity {
             ($($t:ident),+) => {
                 match &self.target {
                     $(ActTarget::$t(t) => t.save_data(store, dest),)+
-                    ActTarget::Other { .. } =>Ok(None)
+                    ActTarget::Other { item, raw_data } => {
+                        match item {
+                            Some(it) => log::warn!("skipped storing unrecognized object ({} {})", it.item_type, it.id),
+                            None => log::warn!("skipped unrecognized object (unknown type,id)")
+                        }
+                        log::trace!("skipped object raw data: {:#?}", raw_data);
+                        Ok(None)
+                    }
                 }
             };
         }

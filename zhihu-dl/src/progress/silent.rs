@@ -3,9 +3,6 @@ use std::fmt::Display;
 
 pub struct Silent;
 impl Progress for Silent {
-    fn suspend<F: FnOnce()>(&self, f: F) {
-        f()
-    }
     async fn sleep(&self, duration: std::time::Duration) {
         tokio::time::sleep(duration).await
     }

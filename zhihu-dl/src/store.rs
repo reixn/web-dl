@@ -57,6 +57,21 @@ pub struct StoreObject {
     pub(crate) question: BTreeSet<QuestionId>,
     pub(crate) user: BTreeSet<UserId>,
 }
+impl StoreObject {
+    fn save(&self, path: PathBuf) -> Result<(), StoreError> {
+        serde_yaml::to_writer(
+            io::BufWriter::new({
+                fs::File::create(path.as_path()).map_err(|e| StoreError::Fs {
+                    op: FsErrorOp::CreateFile,
+                    path,
+                    source: e,
+                })?
+            }),
+            &self,
+        )
+        .map_err(StoreError::from)
+    }
+}
 
 fn item_path<I: HasId>(id: I::Id<'_>, mut path: PathBuf) -> PathBuf {
     path.push(I::TYPE);
@@ -69,6 +84,7 @@ pub trait BasicStoreItem: HasId + storable::Storable {
 }
 
 pub struct Store {
+    dirty: bool,
     root: PathBuf,
     objects: StoreObject,
     media_storer: media::Storer,
@@ -89,7 +105,12 @@ impl Store {
             source: e,
         })?;
         Ok(Self {
-            objects: StoreObject::default(),
+            dirty: false,
+            objects: {
+                let ret = StoreObject::default();
+                ret.save(path.join(OBJECT_INFO))?;
+                ret
+            },
             media_storer: media::Storer::new({
                 let path = path.join(IMAGE_DIR);
                 match fs::create_dir(&path) {
@@ -122,23 +143,16 @@ impl Store {
                 })?
             }))
             .map_err(StoreError::from)?,
+            dirty: false,
             media_storer: media::Storer::new(path.join(IMAGE_DIR)),
             root: path,
         })
     }
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
     pub fn save(&self) -> Result<(), StoreError> {
-        serde_yaml::to_writer(
-            io::BufWriter::new({
-                let path = self.root.join(OBJECT_INFO);
-                fs::File::create(&path).map_err(|e| StoreError::Fs {
-                    op: FsErrorOp::CreateFile,
-                    path,
-                    source: e,
-                })?
-            }),
-            &self.objects,
-        )
-        .map_err(StoreError::from)
+        self.objects.save(self.root.join(OBJECT_INFO))
     }
     pub fn store_path<I: HasId>(&self, id: I::Id<'_>) -> PathBuf {
         item_path::<I>(id, self.root.clone())
@@ -153,13 +167,14 @@ impl Store {
         let path = self.store_path::<I>(object.id());
         object.store(&path)?;
         object.add_info(&mut self.objects);
+        self.dirty = true;
         Ok(path)
     }
 }
 
 pub struct LinkInfo {
-    pub source: PathBuf,
-    pub link: PathBuf,
+    pub(crate) source: PathBuf,
+    pub(crate) link: PathBuf,
 }
 pub trait StoreItem: HasId {
     fn in_store(id: Self::Id<'_>, store: &Store) -> bool;
