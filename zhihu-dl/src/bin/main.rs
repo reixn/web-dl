@@ -643,6 +643,7 @@ enum Verbosity {
     Info,
     Debug,
     Trace,
+    Off,
 }
 #[derive(Debug, Parser)]
 #[command(name = "zhihu-dl", about, version)]
@@ -751,27 +752,29 @@ fn main() {
     let reporter = ProgressReporter::new(None);
 
     let log = slog::Logger::root(
-        slog::LevelFilter::new(
-            std::sync::Mutex::new(
-                (LogDrain {
-                    progress_bar: reporter.multi_progress.clone(),
-                    term: slog_term::FullFormat::new(
-                        slog_term::TermDecorator::new().stdout().build(),
-                    )
+        slog_envlogger::LogBuilder::new(std::sync::Mutex::new(
+            (LogDrain {
+                progress_bar: reporter.multi_progress.clone(),
+                term: slog_term::FullFormat::new(slog_term::TermDecorator::new().stdout().build())
                     .build()
                     .fuse(),
-                })
-                .fuse(),
-            ),
-            cmd.verbosity.map_or(slog::Level::Warning, |v| match v {
-                Verbosity::Critical => slog::Level::Critical,
-                Verbosity::Error => slog::Level::Error,
-                Verbosity::Warning => slog::Level::Warning,
-                Verbosity::Info => slog::Level::Info,
-                Verbosity::Trace => slog::Level::Trace,
-                Verbosity::Debug => slog::Level::Debug,
-            }),
+            })
+            .fuse(),
+        ))
+        .filter(
+            None,
+            cmd.verbosity
+                .map_or(slog::FilterLevel::Warning, |v| match v {
+                    Verbosity::Off => slog::FilterLevel::Off,
+                    Verbosity::Critical => slog::FilterLevel::Critical,
+                    Verbosity::Error => slog::FilterLevel::Error,
+                    Verbosity::Warning => slog::FilterLevel::Warning,
+                    Verbosity::Info => slog::FilterLevel::Info,
+                    Verbosity::Trace => slog::FilterLevel::Trace,
+                    Verbosity::Debug => slog::FilterLevel::Debug,
+                }),
         )
+        .build()
         .fuse(),
         slog::o!(),
     );
