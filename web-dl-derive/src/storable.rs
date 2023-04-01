@@ -83,7 +83,6 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
             let res = support!(Result);
             let load_chain = support!(load_chained);
             let store_chain = support!(store_chained);
-            let push_path = support!(push_path);
             let mut load_fields: Punctuated<FieldValue, Comma> = Punctuated::new();
             let mut store_fields = Vec::new();
             for i in input.data.take_struct().unwrap() {
@@ -91,14 +90,14 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
                 let id_str = id.to_string();
                 let path: Expr = match i.path {
                     StorePath::Regular => {
-                        parse_quote!(#push_path(path, #id_str))
+                        parse_quote!(path.join(#id_str))
                     }
                     StorePath::Flatten => parse_quote!(path),
                     StorePath::Ext(e) => {
                         let v = format!("{}.{}", id_str, e);
-                        parse_quote!(#push_path(path, #v))
+                        parse_quote!(path.join(#v))
                     }
-                    StorePath::Name(r) => parse_quote!(path.with_file_name(#r)),
+                    StorePath::Name(r) => parse_quote!(path.join(#r)),
                 };
                 load_fields.push({
                     let load_expr: Expr = parse_quote!(#load_chain(#path, __load_opt, #id_str)?);

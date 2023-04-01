@@ -83,57 +83,56 @@ impl Store {
             path: path.as_ref().to_path_buf(),
             source: e,
         })?;
-        let mut path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
+        let path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
             op: FsErrorOp::CanonicalizePath,
             path: path.as_ref().to_path_buf(),
             source: e,
         })?;
         Ok(Self {
-            root: path.clone(),
             objects: StoreObject::default(),
             media_storer: media::Storer::new({
-                path.push(IMAGE_DIR);
-                fs::create_dir(&path).map_err(|e| StoreError::Fs {
-                    op: FsErrorOp::CreateDir,
-                    path: path.clone(),
-                    source: e,
-                })?;
-                path
+                let path = path.join(IMAGE_DIR);
+                match fs::create_dir(&path) {
+                    Ok(_) => path,
+                    Err(e) => {
+                        return Err(StoreError::Fs {
+                            op: FsErrorOp::CreateDir,
+                            path,
+                            source: e,
+                        })
+                    }
+                }
             }),
+            root: path,
         })
     }
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StoreError> {
-        let mut path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
+        let path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
             op: FsErrorOp::CanonicalizePath,
             path: path.as_ref().to_path_buf(),
             source: e,
         })?;
         Ok(Self {
-            root: path.clone(),
             objects: serde_yaml::from_reader(io::BufReader::new({
-                let mut path = path.clone();
-                path.push(OBJECT_INFO);
+                let path = path.join(OBJECT_INFO);
                 fs::File::open(&path).map_err(|e| StoreError::Fs {
                     op: FsErrorOp::OpenFile,
-                    path: path.clone(),
+                    path,
                     source: e,
                 })?
             }))
             .map_err(StoreError::from)?,
-            media_storer: {
-                path.push(IMAGE_DIR);
-                media::Storer::new(path)
-            },
+            media_storer: media::Storer::new(path.join(IMAGE_DIR)),
+            root: path,
         })
     }
     pub fn save(&self) -> Result<(), StoreError> {
         serde_yaml::to_writer(
             io::BufWriter::new({
-                let mut path = self.root.clone();
-                path.push(OBJECT_INFO);
+                let path = self.root.join(OBJECT_INFO);
                 fs::File::create(&path).map_err(|e| StoreError::Fs {
                     op: FsErrorOp::CreateFile,
-                    path: path.clone(),
+                    path,
                     source: e,
                 })?
             }),

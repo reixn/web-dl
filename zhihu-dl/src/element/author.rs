@@ -3,7 +3,10 @@ use crate::{
     raw_data::FromRaw,
 };
 use serde::{de, Deserialize, Serialize};
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 use web_dl_base::utils::bytes;
 
 pub const VERSION: Version = Version { major: 1, minor: 0 };
@@ -44,6 +47,13 @@ impl Display for UserId {
         bytes::fmt(&self.0, f)
     }
 }
+impl FromStr for UserId {
+    type Err = bytes::DecodeError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        bytes::decode_bytes(s).map(UserId)
+    }
+}
+
 impl<'de> Deserialize<'de> for FromRaw<Option<UserId>> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

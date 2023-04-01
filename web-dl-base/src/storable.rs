@@ -77,7 +77,7 @@ pub mod macro_export {
     pub use std::{
         self, convert::AsRef, default::Default, path::Path, result::Result, string::String,
     };
-    use std::{fmt::Display, fs, io, path::PathBuf};
+    use std::{fmt::Display, fs, io};
 
     pub fn create_dir_missing(path: &Path) -> Result<(), Error> {
         if !path.exists() {
@@ -89,11 +89,6 @@ pub mod macro_export {
         } else {
             Ok(())
         }
-    }
-    pub fn push_path<P: AsRef<Path>>(path: P, value: &str) -> PathBuf {
-        let mut ret = path.as_ref().to_path_buf();
-        ret.push(value);
-        ret
     }
     pub fn load_chained<S: Storable, P: AsRef<Path>, C: Display>(
         path: P,
@@ -150,7 +145,7 @@ pub mod macro_export {
             .map_err(Error::Json)
     }
 }
-use macro_export::{create_dir_missing, push_path};
+use macro_export::create_dir_missing;
 
 pub use web_dl_derive::Storable;
 
@@ -223,7 +218,7 @@ impl<I: HasId + Storable> Storable for Vec<I> {
         create_dir_missing(path)?;
         for i in self {
             let id = i.id().to_string();
-            i.store(push_path(path, id.as_str()))
+            i.store(path.join(id.as_str()))
                 .map_err(|e| Error::Chained {
                     field: id,
                     source: Box::new(e),
