@@ -221,7 +221,7 @@ impl Driver {
             initialized: false,
         })
     }
-    pub fn save(&self) -> Result<(), StoreError> {
+    pub fn save(&mut self) -> Result<(), StoreError> {
         self.store.save()
     }
     pub async fn init(&mut self) -> Result<(), reqwest::Error> {

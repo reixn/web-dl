@@ -151,8 +151,10 @@ impl Store {
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
-    pub fn save(&self) -> Result<(), StoreError> {
-        self.objects.save(self.root.join(OBJECT_INFO))
+    pub fn save(&mut self) -> Result<(), StoreError> {
+        self.objects.save(self.root.join(OBJECT_INFO))?;
+        self.dirty = false;
+        Ok(())
     }
     pub fn store_path<I: HasId>(&self, id: I::Id<'_>) -> PathBuf {
         item_path::<I>(id, self.root.clone())
