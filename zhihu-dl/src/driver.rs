@@ -4,7 +4,7 @@ use crate::{
     progress,
     raw_data::{self, RawData, RawDataInfo},
     request::Client,
-    store::{item_path, BasicStoreItem, Store, StoreError, StoreItem},
+    store::{BasicStoreItem, Store, StoreError, StoreItem},
 };
 use chrono::Utc;
 use serde::Deserialize;
@@ -276,29 +276,30 @@ impl Driver {
         id: <I as HasId>::Id<'a>,
         get_comment: bool,
         relative: bool,
-        dest: Pat,
+        parent: Pat,
+        name: &str,
     ) -> Result<Option<I>, ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
         P: progress::ItemProg,
         Pat: AsRef<Path>,
     {
-        let canon_dest = prepare_dest(dest.as_ref()).map_err(ItemError::DestPrep)?;
+        let canon_dest = {
+            let mut dest = prepare_dest(parent.as_ref()).map_err(ItemError::DestPrep)?;
+            dest.push(name);
+            dest
+        };
         let v = if <I as StoreItem>::in_store(id, &self.store) {
             None
         } else {
             Some(self.update_item_impl(prog, id, get_comment).await?.0)
         };
         let store_path = self.store.store_path::<I>(id);
-        match link_to_dest(
-            relative,
-            store_path.as_path(),
-            item_path::<I>(id, canon_dest).as_path(),
-        ) {
+        match link_to_dest(relative, store_path.as_path(), &canon_dest) {
             Ok(_) => Ok(v),
             Err(e) => Err(ItemError::Link {
                 store_path,
-                dest: dest.as_ref().to_path_buf(),
+                dest: parent.as_ref().join(name),
                 source: e,
             }),
         }

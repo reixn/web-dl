@@ -58,7 +58,7 @@ pub struct StoreObject {
     pub(crate) user: BTreeSet<UserId>,
 }
 
-pub(crate) fn item_path<I: HasId>(id: I::Id<'_>, mut path: PathBuf) -> PathBuf {
+fn item_path<I: HasId>(id: I::Id<'_>, mut path: PathBuf) -> PathBuf {
     path.push(I::TYPE);
     path.push(id.to_string());
     path
