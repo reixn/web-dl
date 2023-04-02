@@ -14,7 +14,13 @@ use web_dl_base::{
     storable::Storable,
 };
 
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+pub mod document;
+mod html_reader;
+pub mod writer {
+    pub mod pandoc;
+}
+
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 
 #[derive(Debug, Clone, Storable, HasImage, Serialize, Deserialize)]
 #[store(format = "yaml")]
@@ -31,6 +37,8 @@ pub struct Content {
     #[store(path(ext = "yaml"))]
     #[has_image(error = "pass_through")]
     pub info: ContentInfo,
+    #[store(path(ext = "ron"))]
+    pub document: Option<document::Document>,
     #[store(path(ext = "html"))]
     pub raw_html: Option<String>,
 }
@@ -47,6 +55,7 @@ impl<'de> Deserialize<'de> for FromRaw<Content> {
                     is_empty: d.is_empty(),
                     images: Vec::new(),
                 },
+                document: None,
                 raw_html: if d.is_empty() { None } else { Some(d) },
             })
         })
@@ -60,12 +69,24 @@ impl Default for Content {
                 is_empty: true,
                 images: Vec::new(),
             },
+            document: None,
             raw_html: None,
         }
     }
 }
 
 impl Content {
+    pub fn convert_html(&mut self) {
+        self.document = self.raw_html.as_ref().map(|h| {
+            let mp = self
+                .info
+                .images
+                .iter()
+                .map(|i| (i.url.as_str(), i))
+                .collect();
+            html_reader::from_raw_html(h.as_str(), &mp)
+        });
+    }
     pub(crate) fn image_urls(&self) -> HashSet<Url> {
         let html = match &self.raw_html {
             Some(h) => h,

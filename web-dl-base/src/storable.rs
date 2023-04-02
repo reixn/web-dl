@@ -52,6 +52,18 @@ pub enum Error {
         #[from]
         serde_json::Error,
     ),
+    #[error("failed to process ron")]
+    RonSpanned(
+        #[source]
+        #[from]
+        ron::error::SpannedError,
+    ),
+    #[error("failed to process ron")]
+    Ron(
+        #[source]
+        #[from]
+        ron::error::Error,
+    ),
     #[error("failed to process field {field}")]
     Chained {
         field: String,
@@ -131,6 +143,9 @@ pub mod macro_export {
     pub fn load_json<D: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<D, Error> {
         serde_json::from_reader::<_, D>(io::BufReader::new(open_file(path)?)).map_err(Error::Json)
     }
+    pub fn load_ron<D: serde::de::DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<D, Error> {
+        ron::de::from_reader(io::BufReader::new(open_file(path)?)).map_err(Error::from)
+    }
     pub fn store_yaml<D: serde::Serialize, P: AsRef<Path>>(
         value: &D,
         path: P,
@@ -143,6 +158,14 @@ pub mod macro_export {
     ) -> Result<(), Error> {
         serde_json::to_writer_pretty(io::BufWriter::new(create_file(path)?), value)
             .map_err(Error::Json)
+    }
+    pub fn store_ron<D: serde::Serialize, P: AsRef<Path>>(value: &D, path: P) -> Result<(), Error> {
+        ron::ser::to_writer_pretty(
+            io::BufWriter::new(create_file(path)?),
+            value,
+            ron::ser::PrettyConfig::default(),
+        )
+        .map_err(Error::from)
     }
 }
 use macro_export::create_dir_missing;

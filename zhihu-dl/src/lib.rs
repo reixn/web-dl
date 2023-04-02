@@ -8,6 +8,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_slice)]
 #![feature(maybe_uninit_write_slice)]
+#![feature(slice_group_by)]
 #![allow(incomplete_features)]
 
 pub mod element {

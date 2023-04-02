@@ -16,6 +16,7 @@ enum StoreFormat {
     Directory,
     Yaml,
     Json,
+    Ron,
 }
 
 #[derive(Default, FromMeta)]
@@ -160,6 +161,15 @@ pub fn derive_storable(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
         StoreFormat::Json => {
             let load = support!(load_json);
             let store = support!(store_json);
+            gen_impl(
+                input.ident,
+                quote! {#load(path)},
+                quote! {#store(self, path)},
+            )
+        }
+        StoreFormat::Ron => {
+            let load = support!(load_ron);
+            let store = support!(store_ron);
             gen_impl(
                 input.ident,
                 quote! {#load(path)},
