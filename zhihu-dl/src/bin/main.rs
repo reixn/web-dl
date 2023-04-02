@@ -752,30 +752,37 @@ fn main() {
     let reporter = ProgressReporter::new(None);
 
     let log = slog::Logger::root(
-        slog_envlogger::LogBuilder::new(std::sync::Mutex::new(
-            (LogDrain {
-                progress_bar: reporter.multi_progress.clone(),
-                term: slog_term::FullFormat::new(slog_term::TermDecorator::new().stdout().build())
+        {
+            let mut lb = slog_envlogger::LogBuilder::new(std::sync::Mutex::new(
+                (LogDrain {
+                    progress_bar: reporter.multi_progress.clone(),
+                    term: slog_term::FullFormat::new(
+                        slog_term::TermDecorator::new().stdout().build(),
+                    )
                     .build()
                     .fuse(),
-            })
-            .fuse(),
-        ))
-        .filter(
-            None,
-            cmd.verbosity
-                .map_or(slog::FilterLevel::Warning, |v| match v {
-                    Verbosity::Off => slog::FilterLevel::Off,
-                    Verbosity::Critical => slog::FilterLevel::Critical,
-                    Verbosity::Error => slog::FilterLevel::Error,
-                    Verbosity::Warning => slog::FilterLevel::Warning,
-                    Verbosity::Info => slog::FilterLevel::Info,
-                    Verbosity::Trace => slog::FilterLevel::Trace,
-                    Verbosity::Debug => slog::FilterLevel::Debug,
-                }),
-        )
-        .build()
-        .fuse(),
+                })
+                .fuse(),
+            ));
+            if let Some(v) = cmd.verbosity {
+                lb = lb.filter(
+                    None,
+                    match v {
+                        Verbosity::Off => slog::FilterLevel::Off,
+                        Verbosity::Critical => slog::FilterLevel::Critical,
+                        Verbosity::Error => slog::FilterLevel::Error,
+                        Verbosity::Warning => slog::FilterLevel::Warning,
+                        Verbosity::Info => slog::FilterLevel::Info,
+                        Verbosity::Trace => slog::FilterLevel::Trace,
+                        Verbosity::Debug => slog::FilterLevel::Debug,
+                    },
+                );
+            }
+            if let Ok(v) = std::env::var("RUST_LOG") {
+                lb = lb.parse(v.as_str());
+            }
+            lb.build().fuse()
+        },
         slog::o!(),
     );
     let _scope_guard = slog_scope::set_global_logger(log);
