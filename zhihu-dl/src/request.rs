@@ -21,6 +21,7 @@ impl Signer for NoSign {
     }
 }
 
+mod user_agent;
 mod zse96_v3;
 pub use zse96_v3::Zse96V3;
 
@@ -33,6 +34,7 @@ impl Client {
         Ok(Self {
             http_client: client_builder
                 .cookie_provider(cookie_store.clone())
+                .user_agent(user_agent::CHROME)
                 .build()?,
             request_interval: Duration::from_secs(5),
             cookie_store,
