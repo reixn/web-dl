@@ -1,5 +1,5 @@
 use crate::{
-    element::{comment, Author, Comment, Content},
+    element::{comment, content::HasContent, Author, Comment, Content},
     meta::Version,
     raw_data::{FromRaw, RawData},
     request::Zse96V3,
@@ -8,8 +8,12 @@ use crate::{
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
-use web_dl_base::{id::HasId, media::HasImage, storable::Storable};
+use std::{fmt::Display, str::FromStr};
+use web_dl_base::{
+    id::{HasId, OwnedId},
+    media::HasImage,
+    storable::Storable,
+};
 
 const VERSION: Version = Version { major: 1, minor: 0 };
 
@@ -18,6 +22,17 @@ pub struct AnswerId(pub u64);
 impl Display for AnswerId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl FromStr for AnswerId {
+    type Err = <u64 as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u64::from_str(s).map(Self)
+    }
+}
+impl OwnedId<Answer> for AnswerId {
+    fn to_id(&self) -> <Answer as HasId>::Id<'_> {
+        *self
     }
 }
 
@@ -99,6 +114,12 @@ impl super::Fetchable for Answer {
             .await?
             .json()
             .await
+    }
+}
+impl HasContent for Answer {
+    fn convert_html(&mut self) {
+        self.content.convert_html();
+        self.comments.convert_html();
     }
 }
 impl super::Item for Answer {

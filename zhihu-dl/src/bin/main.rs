@@ -13,7 +13,7 @@ use web_dl_base::{
     media,
 };
 use zhihu_dl::{
-    driver::Driver,
+    driver::{self, Driver},
     item::{
         answer::{Answer, AnswerId},
         any::Any,
@@ -69,6 +69,8 @@ impl Output {
 #[derive(Debug, Clone, Copy, Args)]
 struct GetOpt {
     #[arg(long)]
+    no_convert: bool,
+    #[arg(long)]
     comments: bool,
 }
 impl Display for GetOpt {
@@ -78,6 +80,14 @@ impl Display for GetOpt {
         } else {
             "no comments"
         })
+    }
+}
+impl GetOpt {
+    fn to_config(self) -> driver::GetConfig {
+        driver::GetConfig {
+            get_comments: self.comments,
+            convert_html: !self.no_convert,
+        }
     }
 }
 
@@ -185,7 +195,7 @@ impl<Id: Args> ItemOper<Id> {
             ItemOper::Get { id, get_opt } => {
                 let id = id.to_id();
                 driver
-                    .get_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.comments)
+                    .get_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.to_config())
                     .await
                     .map(|_| id.to_string())
             }
@@ -201,7 +211,7 @@ impl<Id: Args> ItemOper<Id> {
                     .download_item::<I, _, _>(
                         &prog.start_item(I::TYPE, id),
                         id,
-                        get_opt.comments,
+                        get_opt.to_config(),
                         !link_opt.link_absolute,
                         PathBuf::from(link_opt.dest.as_str()),
                         name.as_ref().map_or(id_str.as_str(), |v| v.as_str()),
@@ -212,7 +222,7 @@ impl<Id: Args> ItemOper<Id> {
             ItemOper::Update { id, get_opt } => {
                 let id = id.to_id();
                 driver
-                    .update_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.comments)
+                    .update_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.to_config())
                     .await
                     .map(|_| id.to_string())
             }
@@ -426,7 +436,7 @@ impl<Id: Args> ContainerOper<Id> {
                         &prog.start_item_container(IC::TYPE, id, I::TYPE),
                         id,
                         option,
-                        get_opt.comments,
+                        get_opt.to_config(),
                     )
                     .await
             }
@@ -441,7 +451,7 @@ impl<Id: Args> ContainerOper<Id> {
                         &prog.start_item_container(IC::TYPE, id, I::TYPE),
                         id,
                         option,
-                        get_opt.comments,
+                        get_opt.to_config(),
                         !link_opt.link_absolute,
                         link_opt.dest,
                     )

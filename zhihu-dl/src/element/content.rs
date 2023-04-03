@@ -153,3 +153,21 @@ impl Content {
         }
     }
 }
+
+pub trait HasContent {
+    fn convert_html(&mut self);
+}
+impl<I: HasContent> HasContent for Vec<I> {
+    fn convert_html(&mut self) {
+        for i in self {
+            i.convert_html()
+        }
+    }
+}
+impl<I: HasContent> HasContent for Option<I> {
+    fn convert_html(&mut self) {
+        if let Some(v) = self {
+            v.convert_html()
+        }
+    }
+}

@@ -1,4 +1,9 @@
-use crate::{element::comment, progress, raw_data::RawData, request::Client};
+use crate::{
+    element::{comment, content::HasContent},
+    progress,
+    raw_data::RawData,
+    request::Client,
+};
 use serde::Deserialize;
 use std::fmt::Display;
 use web_dl_base::id::HasId;
@@ -9,7 +14,7 @@ pub trait Fetchable: HasId {
         id: Self::Id<'a>,
     ) -> Result<serde_json::Value, reqwest::Error>;
 }
-pub trait Item: Sized + HasId {
+pub trait Item: Sized + HasId + HasContent {
     type Reply: for<'de> Deserialize<'de>;
     fn from_reply(reply: Self::Reply, raw_data: RawData) -> Self;
     async fn get_images<P: progress::ItemProg>(&mut self, client: &Client, prog: &P) -> bool;

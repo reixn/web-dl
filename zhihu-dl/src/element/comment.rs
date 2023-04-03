@@ -50,11 +50,18 @@ pub struct Comment {
 }
 pub mod fetch;
 pub use fetch::{parse_comment, Error as FetchError, RootType};
+
+use super::content::HasContent;
 impl HasId for Comment {
     const TYPE: &'static str = "comment";
     type Id<'a> = CommentId;
     fn id(&self) -> Self::Id<'_> {
         self.info.id
+    }
+}
+impl HasContent for Comment {
+    fn convert_html(&mut self) {
+        self.content.convert_html();
     }
 }
 

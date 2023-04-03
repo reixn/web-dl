@@ -1,4 +1,5 @@
 use crate::{
+    element::content::HasContent,
     item::{answer, article},
     raw_data::RawData,
     store::StoreItem,
@@ -52,6 +53,16 @@ impl HasId for Any {
         }
     }
 }
+impl HasContent for Any {
+    fn convert_html(&mut self) {
+        match self {
+            Any::Answer(a) => a.convert_html(),
+            Any::Article(a) => a.convert_html(),
+            Any::Other { .. } => (),
+        }
+    }
+}
+
 impl StoreItem for Any {
     fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
         match id {

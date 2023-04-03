@@ -1,6 +1,7 @@
 use crate::{
     element::{
         comment::{self, Comment},
+        content::HasContent,
         Author, Content,
     },
     meta::Version,
@@ -11,9 +12,9 @@ use crate::{
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 use web_dl_base::{
-    id::HasId,
+    id::{HasId, OwnedId},
     media::{HasImage, Image},
     storable::Storable,
 };
@@ -25,6 +26,17 @@ pub struct ArticleId(pub u64);
 impl Display for ArticleId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl FromStr for ArticleId {
+    type Err = <u64 as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u64::from_str(s).map(Self)
+    }
+}
+impl OwnedId<Article> for ArticleId {
+    fn to_id(&self) -> <Article as HasId>::Id<'_> {
+        *self
     }
 }
 
@@ -125,6 +137,12 @@ impl super::Fetchable for Article {
         id: ArticleId,
     ) -> Result<serde_json::Value, reqwest::Error> {
         Self::send_request(client, id).await?.json().await
+    }
+}
+impl HasContent for Article {
+    fn convert_html(&mut self) {
+        self.content.convert_html();
+        self.comments.convert_html();
     }
 }
 impl super::Item for Article {

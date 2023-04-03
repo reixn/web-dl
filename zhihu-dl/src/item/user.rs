@@ -1,6 +1,6 @@
 pub use crate::element::author::{UserId, UserType};
 use crate::{
-    element::Content,
+    element::{content::HasContent, Content},
     item::Item,
     meta::Version,
     progress,
@@ -82,6 +82,11 @@ impl super::Fetchable for User {
             .await?
             .json()
             .await
+    }
+}
+impl HasContent for User {
+    fn convert_html(&mut self) {
+        self.description.convert_html();
     }
 }
 

@@ -118,6 +118,20 @@ pub enum ContainerError {
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GetConfig {
+    pub get_comments: bool,
+    pub convert_html: bool,
+}
+impl Default for GetConfig {
+    fn default() -> Self {
+        Self {
+            get_comments: false,
+            convert_html: true,
+        }
+    }
+}
+
 fn prepare_dest(dest: &Path) -> Result<PathBuf, DestPrepError> {
     if !dest.exists() {
         fs::create_dir_all(dest).map_err(DestPrepError::CreateDir)?;
@@ -237,18 +251,22 @@ impl Driver {
         &self,
         prog: &P,
         item: &mut I,
-        get_comment: bool,
+        config: GetConfig,
     ) -> Result<(), ItemError> {
         log::info!("getting images for {} {}", I::TYPE, item.id());
         if item.get_images(&self.client, prog).await {
             prog.sleep(self.client.request_interval).await;
         }
-        if get_comment {
+        if config.get_comments {
             log::info!("getting comments for {} {}", I::TYPE, item.id());
             item.get_comments(&self.client, prog)
                 .await
                 .map_err(ItemError::from)?;
             prog.sleep(self.client.request_interval).await;
+        }
+        if config.convert_html {
+            log::info!("converting html for {} {}", I::TYPE, item.id());
+            item.convert_html();
         }
         Ok(())
     }
@@ -257,7 +275,7 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        get_comment: bool,
+        config: GetConfig,
     ) -> Result<(I, PathBuf), ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
@@ -278,7 +296,7 @@ impl Driver {
                 },
             )
         };
-        self.process_item(prog, &mut ret, get_comment).await?;
+        self.process_item(prog, &mut ret, config).await?;
         log::info!("add item {} {} to store", I::TYPE, ret.id());
         let dest = self.store.add_object(&ret).map_err(ItemError::from)?;
         log::debug!("store path: {}", dest.display());
@@ -290,7 +308,7 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        get_comment: bool,
+        config: GetConfig,
     ) -> Result<Option<I>, ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
@@ -299,7 +317,7 @@ impl Driver {
         Ok(if <I as StoreItem>::in_store(id, &self.store) {
             None
         } else {
-            Some(self.update_item_impl(prog, id, get_comment).await?.0)
+            Some(self.update_item_impl(prog, id, config).await?.0)
         })
     }
 
@@ -307,7 +325,7 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        get_comment: bool,
+        config: GetConfig,
         relative: bool,
         parent: Pat,
         name: &str,
@@ -322,7 +340,7 @@ impl Driver {
             dest.push(name);
             dest
         };
-        let v = self.get_item(prog, id, get_comment).await?;
+        let v = self.get_item(prog, id, config).await?;
         let store_path = self.store.store_path::<I>(id);
         log::info!(
             "link {} {} ({}) to {}",
@@ -344,15 +362,13 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        get_comment: bool,
+        config: GetConfig,
     ) -> Result<I, ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
         P: progress::ItemProg,
     {
-        self.update_item_impl(prog, id, get_comment)
-            .await
-            .map(|r| r.0)
+        self.update_item_impl(prog, id, config).await.map(|r| r.0)
     }
 
     async fn get_container_impl<'a, IC, I, O, P>(
@@ -360,7 +376,7 @@ impl Driver {
         prog: &P,
         id: <IC as HasId>::Id<'a>,
         option: O,
-        get_comment: bool,
+        config: GetConfig,
         canon_dest: Option<PathBuf>,
     ) -> Result<(Vec<ContainerItem<I>>, Vec<(usize, LinkInfo)>), ContainerError>
     where
@@ -400,7 +416,7 @@ impl Driver {
                     continue;
                 }
                 let i_p = p.start_item(I::TYPE, item.id());
-                self.process_item(&i_p, &mut item, get_comment)
+                self.process_item(&i_p, &mut item, config)
                     .await
                     .map_err(|e| ContainerError::Item {
                         id: item.id().to_string(),
@@ -445,7 +461,7 @@ impl Driver {
         prog: &P,
         id: <IC as HasId>::Id<'a>,
         option: O,
-        get_comment: bool,
+        config: GetConfig,
     ) -> Result<Vec<ContainerItem<I>>, ContainerError>
     where
         I: Item + StoreItem + media::HasImage,
@@ -453,7 +469,7 @@ impl Driver {
         IC: ItemContainer<I, O>,
         P: progress::ItemContainerProg,
     {
-        self.get_container_impl::<IC, I, O, P>(prog, id, option, get_comment, None)
+        self.get_container_impl::<IC, I, O, P>(prog, id, option, config, None)
             .await
             .map(|r| r.0)
     }
@@ -462,7 +478,7 @@ impl Driver {
         prog: &P,
         id: <IC as HasId>::Id<'a>,
         option: O,
-        get_comment: bool,
+        config: GetConfig,
         relative: bool,
         dest: Pat,
     ) -> Result<Vec<ContainerItem<I>>, ContainerError>
@@ -475,7 +491,7 @@ impl Driver {
     {
         let canon_dest = prepare_dest(dest.as_ref()).map_err(ContainerError::from)?;
         let (ret, link_path) = self
-            .get_container_impl::<IC, I, O, P>(prog, id, option, get_comment, Some(canon_dest))
+            .get_container_impl::<IC, I, O, P>(prog, id, option, config, Some(canon_dest))
             .await?;
         for (idx, li) in link_path {
             log::info!(

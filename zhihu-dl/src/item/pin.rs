@@ -1,19 +1,34 @@
 use crate::{
-    element::{comment, Author, Comment, Content},
+    element::{comment, content::HasContent, Author, Comment, Content},
     meta::Version,
     raw_data::{FromRaw, RawData, StrU64},
     store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display};
-use web_dl_base::{id::HasId, media::HasImage, storable::Storable};
+use std::{collections::HashSet, fmt::Display, str::FromStr};
+use web_dl_base::{
+    id::{HasId, OwnedId},
+    media::HasImage,
+    storable::Storable,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PinId(pub u64);
 impl Display for PinId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl FromStr for PinId {
+    type Err = <u64 as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u64::from_str(s).map(Self)
+    }
+}
+impl OwnedId<Pin> for PinId {
+    fn to_id(&self) -> <Pin as HasId>::Id<'_> {
+        *self
     }
 }
 
@@ -24,6 +39,11 @@ pub struct PinContent {
     pub version: Version,
     #[has_image]
     pub content_html: Content,
+}
+impl HasContent for PinContent {
+    fn convert_html(&mut self) {
+        self.content_html.convert_html();
+    }
 }
 
 #[derive(Debug, Storable, Serialize, Deserialize)]
@@ -42,6 +62,11 @@ pub struct PinBody {
     pub info: PinInfo,
     #[has_image(error = "pass_through")]
     pub content: PinContent,
+}
+impl HasContent for PinBody {
+    fn convert_html(&mut self) {
+        self.content.convert_html();
+    }
 }
 
 pub const VERSION: Version = Version { major: 1, minor: 0 };
@@ -88,6 +113,13 @@ impl super::Fetchable for Pin {
             .await?
             .json()
             .await
+    }
+}
+impl HasContent for Pin {
+    fn convert_html(&mut self) {
+        self.body.convert_html();
+        self.repin.convert_html();
+        self.comments.convert_html();
     }
 }
 

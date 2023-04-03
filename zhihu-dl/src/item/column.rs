@@ -1,5 +1,5 @@
 use crate::{
-    element::{Author, Content},
+    element::{content::HasContent, Author, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     store::BasicStoreItem,
@@ -102,6 +102,12 @@ impl super::Fetchable for Column {
             .await?
             .json()
             .await
+    }
+}
+impl HasContent for Column {
+    fn convert_html(&mut self) {
+        self.intro.convert_html();
+        self.description.convert_html();
     }
 }
 

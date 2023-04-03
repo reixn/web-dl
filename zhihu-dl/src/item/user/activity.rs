@@ -1,4 +1,5 @@
 use crate::{
+    element::content::HasContent,
     item::{
         answer::{self, Answer},
         any::OtherItem,
@@ -109,6 +110,19 @@ impl HasId for Activity {
             };
         }
         target!(Answer, Article, Collection, Column, Pin, Question)
+    }
+}
+impl HasContent for Activity {
+    fn convert_html(&mut self) {
+        match &mut self.target {
+            ActTarget::Answer(a) => a.convert_html(),
+            ActTarget::Article(a) => a.convert_html(),
+            ActTarget::Collection(c) => c.convert_html(),
+            ActTarget::Column(c) => c.convert_html(),
+            ActTarget::Pin(p) => p.convert_html(),
+            ActTarget::Question(q) => q.convert_html(),
+            ActTarget::Other { .. } => (),
+        }
     }
 }
 impl StoreItem for Activity {

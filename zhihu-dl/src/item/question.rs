@@ -1,5 +1,5 @@
 use crate::{
-    element::{comment, Author, Comment, Content},
+    element::{comment, content::HasContent, Author, Comment, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
@@ -8,8 +8,12 @@ use crate::{
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
-use web_dl_base::{id::HasId, media::HasImage, storable::Storable};
+use std::{fmt::Display, str::FromStr};
+use web_dl_base::{
+    id::{HasId, OwnedId},
+    media::HasImage,
+    storable::Storable,
+};
 
 pub const VERSION: Version = Version { major: 1, minor: 0 };
 
@@ -18,6 +22,17 @@ pub struct QuestionId(pub u64);
 impl Display for QuestionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl FromStr for QuestionId {
+    type Err = <u64 as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u64::from_str(s).map(Self)
+    }
+}
+impl OwnedId<Question> for QuestionId {
+    fn to_id(&self) -> <Question as HasId>::Id<'_> {
+        *self
     }
 }
 
@@ -57,6 +72,12 @@ impl BasicStoreItem for Question {
     }
     fn add_info(&self, info: &mut crate::store::StoreObject) {
         info.question.insert(self.info.id);
+    }
+}
+impl HasContent for Question {
+    fn convert_html(&mut self) {
+        self.content.convert_html();
+        self.comments.convert_html();
     }
 }
 

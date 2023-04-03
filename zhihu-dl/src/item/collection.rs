@@ -1,19 +1,34 @@
 use crate::{
-    element::{comment, Author, Comment, Content},
+    element::{comment, content::HasContent, Author, Comment, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
-use web_dl_base::{id::HasId, media::HasImage, storable::Storable};
+use std::{fmt::Display, str::FromStr};
+use web_dl_base::{
+    id::{HasId, OwnedId},
+    media::HasImage,
+    storable::Storable,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct CollectionId(pub u64);
 impl Display for CollectionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl FromStr for CollectionId {
+    type Err = <u64 as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u64::from_str(s).map(Self)
+    }
+}
+impl OwnedId<Collection> for CollectionId {
+    fn to_id(&self) -> <Collection as HasId>::Id<'_> {
+        *self
     }
 }
 
@@ -49,6 +64,7 @@ impl HasId for Collection {
         self.info.id
     }
 }
+
 impl BasicStoreItem for Collection {
     fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
         info.collection.contains(&id)
@@ -72,6 +88,13 @@ impl super::Fetchable for Collection {
             .await
     }
 }
+impl HasContent for Collection {
+    fn convert_html(&mut self) {
+        self.description.convert_html();
+        self.comments.convert_html();
+    }
+}
+
 #[derive(Deserialize)]
 struct Reply {
     id: u64,
