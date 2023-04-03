@@ -55,10 +55,24 @@ impl Display for VoidOpt {
 }
 
 pub mod answer;
+pub use answer::Answer;
+
 pub mod any;
+
 pub mod article;
+pub use article::Article;
+
 pub mod collection;
+pub use collection::Collection;
+
 pub mod column;
+pub use column::Column;
+
 pub mod pin;
+pub use pin::Pin;
+
 pub mod question;
+pub use question::Question;
+
 pub mod user;
+pub use user::User;
