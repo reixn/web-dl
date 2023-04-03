@@ -10,7 +10,7 @@ use std::{
 use termcolor::{BufferedStandardStream, Color, ColorSpec, WriteColor};
 use web_dl_base::{
     id::{HasId, OwnedId},
-    media,
+    media, storable,
 };
 use zhihu_dl::{
     driver::{self, Driver},
@@ -124,6 +124,10 @@ enum ItemOper<Id: Args> {
         #[command(flatten)]
         get_opt: GetOpt,
     },
+    ConvertHtml {
+        #[command(flatten)]
+        id: Id,
+    },
 }
 impl<Id: Args> ItemOper<Id> {
     async fn run<I>(
@@ -182,6 +186,14 @@ impl<Id: Args> ItemOper<Id> {
                 format!("({})", get_opt),
                 true,
             ),
+            Self::ConvertHtml { id } => (
+                "Converting",
+                format!(" {}", id.to_id()),
+                "Converted",
+                "convert",
+                String::new(),
+                false,
+            ),
         };
         if require_init && !driver.is_initialized() {
             anyhow::bail!("client is not initialized");
@@ -194,10 +206,13 @@ impl<Id: Args> ItemOper<Id> {
         let id = match self {
             ItemOper::Get { id, get_opt } => {
                 let id = id.to_id();
-                driver
+                match driver
                     .get_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.to_config())
                     .await
-                    .map(|_| id.to_string())
+                {
+                    Ok(_) => Ok(id.to_string()),
+                    Err(e) => Err(anyhow::Error::new(e)),
+                }
             }
             ItemOper::Download {
                 id,
@@ -207,7 +222,7 @@ impl<Id: Args> ItemOper<Id> {
             } => {
                 let id = id.to_id();
                 let id_str = id.to_string();
-                driver
+                match driver
                     .download_item::<I, _, _>(
                         &prog.start_item(I::TYPE, id),
                         id,
@@ -217,13 +232,34 @@ impl<Id: Args> ItemOper<Id> {
                         name.as_ref().map_or(id_str.as_str(), |v| v.as_str()),
                     )
                     .await
-                    .map(|_| id.to_string())
+                {
+                    Ok(_) => Ok(id.to_string()),
+                    Err(e) => Err(anyhow::Error::new(e)),
+                }
             }
             ItemOper::Update { id, get_opt } => {
                 let id = id.to_id();
-                driver
+                match driver
                     .update_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.to_config())
                     .await
+                {
+                    Ok(_) => Ok(id.to_string()),
+                    Err(e) => Err(anyhow::Error::new(e)),
+                }
+            }
+            ItemOper::ConvertHtml { id } => {
+                let id = id.to_id();
+                driver
+                    .store
+                    .get_object::<I>(id, storable::LoadOpt::default())
+                    .context("failed to load object")
+                    .and_then(|mut o| {
+                        o.convert_html();
+                        driver
+                            .store
+                            .add_object(&o)
+                            .context("failed to store object")
+                    })
                     .map(|_| id.to_string())
             }
         }

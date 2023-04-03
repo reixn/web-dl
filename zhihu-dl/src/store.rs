@@ -88,6 +88,7 @@ pub struct Store {
     root: PathBuf,
     objects: StoreObject,
     media_storer: media::Storer,
+    media_loader: media::Loader,
 }
 
 const OBJECT_INFO: &str = "objects.yaml";
@@ -104,6 +105,7 @@ impl Store {
             path: path.as_ref().to_path_buf(),
             source: e,
         })?;
+        let image_dir = path.join(IMAGE_DIR);
         Ok(Self {
             dirty: false,
             objects: {
@@ -112,18 +114,18 @@ impl Store {
                 ret
             },
             media_storer: media::Storer::new({
-                let path = path.join(IMAGE_DIR);
-                match fs::create_dir(&path) {
-                    Ok(_) => path,
+                match fs::create_dir(&image_dir) {
+                    Ok(_) => image_dir.as_path(),
                     Err(e) => {
                         return Err(StoreError::Fs {
                             op: FsErrorOp::CreateDir,
-                            path,
+                            path: image_dir,
                             source: e,
                         })
                     }
                 }
             }),
+            media_loader: media::Loader::new(image_dir),
             root: path,
         })
     }
@@ -133,6 +135,7 @@ impl Store {
             path: path.as_ref().to_path_buf(),
             source: e,
         })?;
+        let media_dir = path.join(IMAGE_DIR);
         Ok(Self {
             objects: serde_yaml::from_reader(io::BufReader::new({
                 let path = path.join(OBJECT_INFO);
@@ -144,7 +147,8 @@ impl Store {
             }))
             .map_err(StoreError::from)?,
             dirty: false,
-            media_storer: media::Storer::new(path.join(IMAGE_DIR)),
+            media_storer: media::Storer::new(&media_dir),
+            media_loader: media::Loader::new(media_dir),
             root: path,
         })
     }
@@ -159,10 +163,22 @@ impl Store {
     pub fn store_path<I: HasId>(&self, id: I::Id<'_>) -> PathBuf {
         item_path::<I>(id, self.root.clone())
     }
-    pub(crate) fn add_media<I: media::HasImage>(&mut self, data: &I) -> Result<(), media::Error> {
+    pub fn add_media<I: media::HasImage>(&mut self, data: &I) -> Result<(), media::Error> {
         data.store_images(&mut self.media_storer)
     }
-    pub(crate) fn add_object<I: BasicStoreItem>(
+    pub fn get_object<I: BasicStoreItem>(
+        &mut self,
+        id: I::Id<'_>,
+        load_opt: storable::LoadOpt,
+    ) -> Result<I, storable::Error> {
+        let mut path = self.root.join(I::TYPE);
+        path.push(id.to_string());
+        I::load(path, load_opt)
+    }
+    pub fn get_media<I: media::HasImage>(&mut self, object: &mut I) -> Result<(), media::Error> {
+        object.load_images(&mut self.media_loader)
+    }
+    pub fn add_object<I: BasicStoreItem>(
         &mut self,
         object: &I,
     ) -> Result<PathBuf, storable::Error> {
