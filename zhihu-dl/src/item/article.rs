@@ -144,6 +144,9 @@ impl HasContent for Article {
         self.content.convert_html();
         self.comments.convert_html();
     }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.content)
+    }
 }
 impl super::Item for Article {
     type Reply = Reply;

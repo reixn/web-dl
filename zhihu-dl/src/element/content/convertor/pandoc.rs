@@ -17,7 +17,7 @@ fn inline_to_text(inline: &Inline, dest: &mut String) {
             .for_each(|v| v.iter().for_each(|i| inline_to_text(i, dest))),
     }
 }
-fn text(input: String, dest: &mut Vec<pandoc_ast::Inline>) {
+fn text(input: &str, dest: &mut Vec<pandoc_ast::Inline>) {
     for i in input
         .chars()
         .collect::<Vec<char>>()
@@ -34,28 +34,28 @@ fn text(input: String, dest: &mut Vec<pandoc_ast::Inline>) {
 }
 
 fn proc_image(
-    alt_text: Option<String>,
-    description: Option<Vec<Inline>>,
-    src: media::Image,
+    alt_text: &Option<String>,
+    description: &Option<Vec<Inline>>,
+    src: &media::Image,
     images_store: &Path,
 ) -> pandoc_ast::Inline {
     pandoc_ast::Inline::Image(
         pandoc_ast::Attr::default(),
-        alt_text.map_or(Vec::default(), |alt| {
+        alt_text.as_ref().map_or(Vec::default(), |alt| {
             let mut dest = Vec::new();
-            text(alt, &mut dest);
+            text(alt.as_str(), &mut dest);
             dest
         }),
         (
             match src {
-                media::Image::Url(s) => s,
+                media::Image::Url(s) => s.to_owned(),
                 media::Image::Ref(r) => r
                     .hash
                     .store_path(images_store, r.extension.as_str())
                     .to_string_lossy()
                     .into_owned(),
             },
-            description.map_or(String::default(), |d| {
+            description.as_ref().map_or(String::default(), |d| {
                 let mut s = String::new();
                 d.iter().for_each(|i| inline_to_text(i, &mut s));
                 s
@@ -63,12 +63,13 @@ fn proc_image(
         ),
     )
 }
-fn proc_inline(inline: Inline, images_store: &Path, dest: &mut Vec<pandoc_ast::Inline>) {
+fn proc_inline(inline: &Inline, images_store: &Path, dest: &mut Vec<pandoc_ast::Inline>) {
     match inline {
         Inline::Break => dest.push(pandoc_ast::Inline::LineBreak),
-        Inline::Code { code } => {
-            dest.push(pandoc_ast::Inline::Code(pandoc_ast::Attr::default(), code))
-        }
+        Inline::Code { code } => dest.push(pandoc_ast::Inline::Code(
+            pandoc_ast::Attr::default(),
+            code.to_owned(),
+        )),
         Inline::Emphasis(e) => dest.push(pandoc_ast::Inline::Emph(proc_inlines(e, images_store))),
         Inline::Image {
             alt_text,
@@ -80,12 +81,14 @@ fn proc_inline(inline: Inline, images_store: &Path, dest: &mut Vec<pandoc_ast::I
             target,
         } => dest.push(pandoc_ast::Inline::Link(
             pandoc_ast::Attr::default(),
-            description.map_or(Vec::new(), |d| proc_inlines(d, images_store)),
-            (target, String::default()),
+            description
+                .as_ref()
+                .map_or(Vec::new(), |d| proc_inlines(d, images_store)),
+            (target.to_owned(), String::default()),
         )),
         Inline::Math { tex_code } => dest.push(pandoc_ast::Inline::Math(
             pandoc_ast::MathType::InlineMath,
-            tex_code,
+            tex_code.to_owned(),
         )),
         Inline::Note { content } => {
             dest.push(pandoc_ast::Inline::Note(proc_blocks(content, images_store)))
@@ -94,7 +97,7 @@ fn proc_inline(inline: Inline, images_store: &Path, dest: &mut Vec<pandoc_ast::I
         Inline::Text(t) => text(t, dest),
     }
 }
-fn proc_inlines(inlines: Vec<Inline>, images_store: &Path) -> Vec<pandoc_ast::Inline> {
+fn proc_inlines(inlines: &Vec<Inline>, images_store: &Path) -> Vec<pandoc_ast::Inline> {
     let mut ret = Vec::new();
     inlines
         .into_iter()
@@ -102,16 +105,18 @@ fn proc_inlines(inlines: Vec<Inline>, images_store: &Path) -> Vec<pandoc_ast::In
     ret
 }
 
-fn proc_block(block: Block, images_store: &Path) -> pandoc_ast::Block {
+fn proc_block(block: &Block, images_store: &Path) -> pandoc_ast::Block {
     match block {
         Block::BlockQuote { content } => {
             pandoc_ast::Block::BlockQuote(proc_blocks(content, images_store))
         }
         Block::CodeBlock { language, code } => pandoc_ast::Block::CodeBlock(
-            language.map_or_else(pandoc_ast::Attr::default, |l| {
-                (String::default(), Vec::from([l]), Vec::default())
-            }),
-            code,
+            language
+                .as_ref()
+                .map_or_else(pandoc_ast::Attr::default, |l| {
+                    (String::default(), Vec::from([l.to_owned()]), Vec::default())
+                }),
+            code.to_owned(),
         ),
         Block::Figure {
             alt_text,
@@ -124,7 +129,7 @@ fn proc_block(block: Block, images_store: &Path) -> pandoc_ast::Block {
             images_store,
         )])),
         Block::Header { level, content } => pandoc_ast::Block::Header(
-            level as i64,
+            *level as i64,
             pandoc_ast::Attr::default(),
             proc_inlines(content, images_store),
         ),
@@ -187,21 +192,91 @@ fn proc_block(block: Block, images_store: &Path) -> pandoc_ast::Block {
         ),
     }
 }
-fn proc_blocks(blocks: Vec<Block>, images_store: &Path) -> Vec<pandoc_ast::Block> {
+fn proc_blocks(blocks: &Vec<Block>, images_store: &Path) -> Vec<pandoc_ast::Block> {
     blocks
         .into_iter()
         .map(|b| proc_block(b, images_store))
         .collect()
 }
 
-pub fn to_pandoc_ast(document: Document, images_store: &Path) -> pandoc_ast::Pandoc {
+pub fn to_pandoc_ast(document: &Document, images_store: &Path) -> pandoc_ast::Pandoc {
     pandoc_ast::Pandoc {
         meta: pandoc_ast::Map::default(),
-        blocks: proc_blocks(document.data, images_store),
+        blocks: proc_blocks(&document.data, images_store),
         pandoc_api_version: Vec::from([1, 22]),
     }
 }
 
-pub fn to_pandoc_json(document: Document, images_store: &Path) -> String {
+pub fn to_pandoc_json(document: &Document, images_store: &Path) -> String {
     to_pandoc_ast(document, images_store).to_json()
+}
+
+pub struct Pandoc;
+pub struct PandocConfig {
+    pub format: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConvertError {
+    #[error("failed to prepare destination path")]
+    DestPrep(
+        #[from]
+        #[source]
+        crate::util::relative_path::DestPrepError,
+    ),
+    #[error("failed to spawn pandoc {command:?}")]
+    CreateProcess {
+        command: std::process::Command,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to write input pipe")]
+    WriteInput(#[source] std::io::Error),
+    #[error("failed to get child process exit code")]
+    WaitProcess(#[source] std::io::Error),
+    #[error("pandoc exits with {0}")]
+    Pandoc(std::process::ExitStatus),
+}
+
+impl super::super::Convertor for Pandoc {
+    type Config = PandocConfig;
+    type Err = ConvertError;
+    fn convert<S: AsRef<std::path::Path>, P: AsRef<std::path::Path>>(
+        image_store: S,
+        document: &crate::element::content::document::Document,
+        config: &Self::Config,
+        dest: P,
+    ) -> Result<(), Self::Err> {
+        use crate::util::relative_path::{prepare_dest, relative_path_to};
+        use std::{io::Write, process};
+        let canon_dest = prepare_dest(dest.as_ref()).map_err(ConvertError::from)?;
+        let image_store = relative_path_to(image_store.as_ref(), canon_dest).unwrap_or_else(|| {
+            log::warn!(
+                "failed to make image store `{}` relative to `{}`",
+                image_store.as_ref().display(),
+                dest.as_ref().display()
+            );
+            image_store.as_ref().to_path_buf()
+        });
+        let mut ch = {
+            let mut cmd = process::Command::new("pandoc");
+            cmd.args(["-f", "json", "-t", config.format.as_str(), "-o"])
+                .arg(dest.as_ref())
+                .stdin(process::Stdio::piped());
+            cmd.spawn().map_err(|e| ConvertError::CreateProcess {
+                command: cmd,
+                source: e,
+            })?
+        };
+        let ch_stdin = ch.stdin.as_mut().unwrap();
+        ch_stdin
+            .write(to_pandoc_json(document, image_store.as_path()).as_bytes())
+            .map_err(ConvertError::WriteInput)?;
+        let r = ch.wait().map_err(ConvertError::WaitProcess)?;
+        if r.success() {
+            Ok(())
+        } else {
+            Err(ConvertError::Pandoc(r))
+        }
+    }
 }

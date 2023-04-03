@@ -109,6 +109,9 @@ impl HasContent for Column {
         self.intro.convert_html();
         self.description.convert_html();
     }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.description)
+    }
 }
 
 #[derive(Deserialize)]

@@ -44,6 +44,9 @@ impl HasContent for PinContent {
     fn convert_html(&mut self) {
         self.content_html.convert_html();
     }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.content_html)
+    }
 }
 
 #[derive(Debug, Storable, Serialize, Deserialize)]
@@ -66,6 +69,9 @@ pub struct PinBody {
 impl HasContent for PinBody {
     fn convert_html(&mut self) {
         self.content.convert_html();
+    }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        self.content.get_main_content()
     }
 }
 
@@ -120,6 +126,9 @@ impl HasContent for Pin {
         self.body.convert_html();
         self.repin.convert_html();
         self.comments.convert_html();
+    }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.body.content.content_html)
     }
 }
 

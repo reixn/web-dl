@@ -155,6 +155,9 @@ impl Store {
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
+    pub fn image_path(&self) -> PathBuf {
+        self.root.join(IMAGE_DIR)
+    }
     pub fn save(&mut self) -> Result<(), StoreError> {
         self.objects.save(self.root.join(OBJECT_INFO))?;
         self.dirty = false;

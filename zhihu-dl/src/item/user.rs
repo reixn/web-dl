@@ -88,6 +88,9 @@ impl HasContent for User {
     fn convert_html(&mut self) {
         self.description.convert_html();
     }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.description)
+    }
 }
 
 #[derive(Deserialize)]

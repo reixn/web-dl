@@ -63,6 +63,9 @@ impl HasContent for Comment {
     fn convert_html(&mut self) {
         self.content.convert_html();
     }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.content)
+    }
 }
 
 #[derive(Debug)]

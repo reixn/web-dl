@@ -79,6 +79,9 @@ impl HasContent for Question {
         self.content.convert_html();
         self.comments.convert_html();
     }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.content)
+    }
 }
 
 impl super::Fetchable for Question {

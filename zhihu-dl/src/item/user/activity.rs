@@ -114,15 +114,26 @@ impl HasId for Activity {
 }
 impl HasContent for Activity {
     fn convert_html(&mut self) {
-        match &mut self.target {
-            ActTarget::Answer(a) => a.convert_html(),
-            ActTarget::Article(a) => a.convert_html(),
-            ActTarget::Collection(c) => c.convert_html(),
-            ActTarget::Column(c) => c.convert_html(),
-            ActTarget::Pin(p) => p.convert_html(),
-            ActTarget::Question(q) => q.convert_html(),
-            ActTarget::Other { .. } => (),
+        macro_rules! target {
+            ($($t:ident),+) => {
+                match &mut self.target {
+                    $(ActTarget::$t(t) => t.convert_html(),)+
+                    ActTarget::Other {..} => ()
+                }
+            };
         }
+        target!(Answer, Article, Collection, Column, Pin, Question)
+    }
+    fn get_main_content(&self) -> Option<&'_ crate::element::Content> {
+        macro_rules! target {
+            ($($t:ident),+) => {
+                match &self.target {
+                    $(ActTarget::$t(t) => t.get_main_content(),)+
+                    ActTarget::Other {..} => None
+                }
+            };
+        }
+        target!(Answer, Article, Collection, Column, Pin, Question)
     }
 }
 impl StoreItem for Activity {

@@ -93,6 +93,9 @@ impl HasContent for Collection {
         self.description.convert_html();
         self.comments.convert_html();
     }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(&self.description)
+    }
 }
 
 #[derive(Deserialize)]

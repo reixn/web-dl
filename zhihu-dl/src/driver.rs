@@ -5,43 +5,18 @@ use crate::{
     raw_data::{self, RawData, RawDataInfo},
     request::Client,
     store::{BasicStoreItem, LinkInfo, Store, StoreError, StoreItem},
+    util::relative_path::{
+        link_to_dest, prepare_dest, prepare_dest_parent, DestPrepError, LinkError,
+    },
 };
 use chrono::Utc;
 use serde::Deserialize;
 use std::{
     fmt::Display,
-    fs, io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 use thiserror;
 use web_dl_base::{id::HasId, media, storable};
-
-#[derive(Debug, thiserror::Error)]
-pub enum LinkError {
-    #[error("failed to create dir {}", dir.display())]
-    CreateDir {
-        dir: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-    #[error("store path `{}` and destination `{}` has different prefix", store_path.display(), dest.display())]
-    DifferentPrefix { store_path: PathBuf, dest: PathBuf },
-    #[error("failed to create sym link from {} to {}", link.display(), link_source.display())]
-    SymLink {
-        link_source: PathBuf,
-        link: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum DestPrepError {
-    #[error("failed to create destination dir")]
-    CreateDir(#[source] io::Error),
-    #[error("failed to canonicalize dest path")]
-    Canonicalize(#[source] io::Error),
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ItemError {
@@ -130,83 +105,6 @@ impl Default for GetConfig {
             convert_html: true,
         }
     }
-}
-
-fn prepare_dest(dest: &Path) -> Result<PathBuf, DestPrepError> {
-    if !dest.exists() {
-        fs::create_dir_all(dest).map_err(DestPrepError::CreateDir)?;
-    }
-    dest.canonicalize().map_err(DestPrepError::Canonicalize)
-}
-
-fn link_to_dest(relative: bool, store_path: &Path, dest: &Path) -> Result<(), LinkError> {
-    fn symlink<P1: AsRef<Path>, P2: AsRef<Path>>(source: P1, link: P2) -> Result<(), io::Error> {
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(source, link)
-        }
-        #[cfg(windows)]
-        {
-            std::os::windows::fs::symlink_dir(source, link)
-        }
-    }
-    if store_path == dest {
-        return Ok(());
-    }
-    let dest_parent = dest.parent().unwrap();
-    if !dest_parent.exists() {
-        fs::create_dir_all(dest_parent).map_err(|e| LinkError::CreateDir {
-            dir: dest_parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-    if !relative {
-        return symlink(store_path, dest).map_err(|e| LinkError::SymLink {
-            link_source: store_path.to_path_buf(),
-            link: dest.to_path_buf(),
-            source: e,
-        });
-    }
-    let link_source = {
-        let mut ret = PathBuf::new();
-        let mut store_com = store_path.components().peekable();
-        let mut dest_com = dest.parent().unwrap().components().peekable();
-        while store_com.peek() == dest_com.peek() {
-            store_com.next();
-            if dest_com.next().is_none() {
-                break;
-            }
-        }
-        for v in dest_com {
-            match v {
-                Component::Prefix(_) => {
-                    return Err(LinkError::DifferentPrefix {
-                        store_path: store_path.to_path_buf(),
-                        dest: dest.to_path_buf(),
-                    })
-                }
-                Component::Normal(_) => ret.push(".."),
-                _ => unreachable!(),
-            }
-        }
-        for v in store_com {
-            match v {
-                Component::Normal(d) => ret.push(d),
-                _ => unreachable!(),
-            }
-        }
-        log::debug!(
-            "relative path of {}: {}",
-            ret.display(),
-            store_path.display()
-        );
-        ret
-    };
-    symlink(&link_source, dest).map_err(|e| LinkError::SymLink {
-        link_source,
-        link: dest.to_path_buf(),
-        source: e,
-    })
 }
 
 #[derive(Debug)]
@@ -357,19 +255,14 @@ impl Driver {
         id: <I as HasId>::Id<'a>,
         config: GetConfig,
         relative: bool,
-        parent: Pat,
-        name: &str,
+        dest: Pat,
     ) -> Result<Option<I>, ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
         P: progress::ItemProg,
         Pat: AsRef<Path>,
     {
-        let canon_dest = {
-            let mut dest = prepare_dest(parent.as_ref()).map_err(ItemError::DestPrep)?;
-            dest.push(name);
-            dest
-        };
+        let canon_dest = prepare_dest(dest).map_err(ItemError::DestPrep)?;
         let v = self.get_item(prog, id, config).await?;
         let store_path = self.store.store_path::<I>(id);
         log::info!(
@@ -377,13 +270,13 @@ impl Driver {
             I::TYPE,
             id,
             store_path.display(),
-            parent.as_ref().join(name).display()
+            canon_dest.display()
         );
         match link_to_dest(relative, store_path.as_path(), &canon_dest) {
             Ok(_) => Ok(v),
             Err(e) => Err(ItemError::Link {
                 store_path,
-                dest: parent.as_ref().join(name),
+                dest: canon_dest,
                 source: e,
             }),
         }
@@ -519,7 +412,7 @@ impl Driver {
         P: progress::ItemContainerProg,
         Pat: AsRef<Path>,
     {
-        let canon_dest = prepare_dest(dest.as_ref()).map_err(ContainerError::from)?;
+        let canon_dest = prepare_dest_parent(dest.as_ref()).map_err(ContainerError::from)?;
         let (ret, link_path) = self
             .get_container_impl::<IC, I, O, P>(prog, id, option, config, Some(canon_dest))
             .await?;

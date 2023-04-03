@@ -8,7 +8,7 @@ use html5ever::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Display};
 use web_dl_base::{
     media::{fetch_images_iter, HasImage, ImageRef},
     storable::Storable,
@@ -16,7 +16,18 @@ use web_dl_base::{
 
 pub mod document;
 mod html_reader;
-pub mod writer {
+
+pub trait Convertor {
+    type Config;
+    type Err: std::error::Error;
+    fn convert<S: AsRef<std::path::Path>, P: AsRef<std::path::Path>>(
+        image_store: S,
+        document: &document::Document,
+        config: &Self::Config,
+        dest: P,
+    ) -> Result<(), Self::Err>;
+}
+pub mod convertor {
     pub mod pandoc;
 }
 
@@ -76,17 +87,6 @@ impl Default for Content {
 }
 
 impl Content {
-    pub fn convert_html(&mut self) {
-        self.document = self.raw_html.as_ref().map(|h| {
-            let mp = self
-                .info
-                .images
-                .iter()
-                .map(|i| (i.url.as_str(), i))
-                .collect();
-            html_reader::from_raw_html(h.as_str(), &mp)
-        });
-    }
     pub(crate) fn image_urls(&self) -> HashSet<Url> {
         let html = match &self.raw_html {
             Some(h) => h,
@@ -154,14 +154,58 @@ impl Content {
     }
 }
 
+#[derive(Debug)]
+pub enum SelectorError {
+    NotExist,
+    Chained {
+        name: String,
+        source: Box<SelectorError>,
+    },
+}
+impl Display for SelectorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotExist => f.write_str(" does not exist"),
+            Self::Chained { name, source } => {
+                write!(f, ".{}", name)?;
+                source.fmt(f)
+            }
+        }
+    }
+}
+impl std::error::Error for SelectorError {}
+
 pub trait HasContent {
     fn convert_html(&mut self);
+
+    fn get_main_content(&self) -> Option<&'_ Content>;
 }
-impl<I: HasContent> HasContent for Vec<I> {
+
+impl HasContent for Content {
+    fn convert_html(&mut self) {
+        self.document = self.raw_html.as_ref().map(|h| {
+            let mp = self
+                .info
+                .images
+                .iter()
+                .map(|i| (i.url.as_str(), i))
+                .collect();
+            html_reader::from_raw_html(h.as_str(), &mp)
+        });
+    }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        Some(self)
+    }
+}
+
+impl<'a, I: HasContent> HasContent for Vec<I> {
     fn convert_html(&mut self) {
         for i in self {
             i.convert_html()
         }
+    }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        self.get(0).and_then(|v| v.get_main_content())
     }
 }
 impl<I: HasContent> HasContent for Option<I> {
@@ -169,5 +213,8 @@ impl<I: HasContent> HasContent for Option<I> {
         if let Some(v) = self {
             v.convert_html()
         }
+    }
+    fn get_main_content(&self) -> Option<&'_ Content> {
+        self.as_ref().and_then(|v| v.get_main_content())
     }
 }

@@ -61,6 +61,13 @@ impl HasContent for Any {
             Any::Other { .. } => (),
         }
     }
+    fn get_main_content(&self) -> Option<&'_ crate::element::Content> {
+        match self {
+            Any::Answer(a) => a.get_main_content(),
+            Any::Article(a) => a.get_main_content(),
+            Any::Other { .. } => None,
+        }
+    }
 }
 
 impl StoreItem for Any {

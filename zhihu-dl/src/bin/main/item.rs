@@ -1,15 +1,25 @@
 use super::types::*;
 use anyhow::Context;
 use clap::{Args, Subcommand};
+use rustyline::hint::Hint;
 use std::path::PathBuf;
 use termcolor::Color;
 use web_dl_base::{id::OwnedId, media, storable};
 use zhihu_dl::{
     driver::Driver,
+    element::content,
     item::{Answer, Article, Collection, Column, Fetchable, Item, Pin, Question, User},
     progress::{progress_bar::ProgressReporter, Reporter},
     store,
 };
+
+#[derive(Debug, Subcommand)]
+pub enum ConvertOper {
+    Pandoc {
+        #[arg(long)]
+        format: String,
+    },
+}
 
 #[derive(Debug, Subcommand)]
 pub enum ItemOper<Id: Args> {
@@ -31,8 +41,6 @@ pub enum ItemOper<Id: Args> {
         id: Id,
         #[command(flatten)]
         get_opt: GetOpt,
-        #[arg(long)]
-        name: Option<String>,
         #[command(flatten)]
         link_opt: LinkOpt,
     },
@@ -45,6 +53,14 @@ pub enum ItemOper<Id: Args> {
     ConvertHtml {
         #[command(flatten)]
         id: Id,
+    },
+    Convert {
+        #[command(flatten)]
+        id: Id,
+        #[arg(long,value_hint=clap::ValueHint::AnyPath)]
+        dest: String,
+        #[command(subcommand)]
+        operation: ConvertOper,
     },
 }
 
@@ -84,9 +100,10 @@ impl<Id: Args> ItemOper<Id> {
         I: Fetchable + Item + media::HasImage + store::BasicStoreItem,
         Id: OwnedId<I>,
     {
-        let (start_tag, start_id, ok_tag, name, opt, require_init) = match &self {
+        let (start_tag, pre, start_id, ok_tag, name, opt, require_init) = match &self {
             Self::Get { id, get_opt } => (
                 "Getting",
+                "",
                 format!("{}", id.to_id()),
                 "Got",
                 "get",
@@ -95,43 +112,38 @@ impl<Id: Args> ItemOper<Id> {
             ),
             Self::AddRaw { get_opt, path } => (
                 "Adding",
+                "raw data of ",
                 String::from("<raw data>"),
                 "Added",
-                "add",
+                "add raw data of",
                 format!("({}) from {}", get_opt, path),
                 true,
             ),
             Self::Download {
                 get_opt,
                 id,
-                name,
                 link_opt,
             } => (
                 "Downloading",
+                "",
                 format!(" {}", id.to_id()),
                 "Downloaded",
                 "download",
-                {
-                    let mut parent = PathBuf::from(link_opt.dest.as_str());
-                    match &name {
-                        Some(n) => parent.push(n.as_str()),
-                        None => parent.push(id.to_id().to_string()),
-                    };
-                    format!(
-                        "({}) to {}[{}]",
-                        get_opt,
-                        parent.display(),
-                        if link_opt.link_absolute {
-                            "link absolute"
-                        } else {
-                            "link relative"
-                        }
-                    )
-                },
+                format!(
+                    "({}) to {}[{}]",
+                    get_opt,
+                    link_opt.dest.display(),
+                    if link_opt.link_absolute {
+                        "link absolute"
+                    } else {
+                        "link relative"
+                    }
+                ),
                 true,
             ),
             Self::Update { id, get_opt } => (
                 "Updating",
+                "",
                 format!(" {}", id.to_id()),
                 "Updated",
                 "update",
@@ -140,10 +152,24 @@ impl<Id: Args> ItemOper<Id> {
             ),
             Self::ConvertHtml { id } => (
                 "Converting",
+                "raw html of ",
                 format!(" {}", id.to_id()),
                 "Converted",
-                "convert",
+                "convert raw html of",
                 String::new(),
+                false,
+            ),
+            Self::Convert {
+                id,
+                dest,
+                operation: ConvertOper::Pandoc { format },
+            } => (
+                "Converting",
+                "document of ",
+                format!(" {}", id.to_id()),
+                "Converted",
+                "convert document of",
+                format!("using pandoc to {} {}", format, dest),
                 false,
             ),
         };
@@ -154,7 +180,8 @@ impl<Id: Args> ItemOper<Id> {
             Color::Cyan,
             start_tag,
             format_args_nl!(
-                "{item} {id} {opt}",
+                "{pre}{item} {id} {opt}",
+                pre = pre,
                 item = I::TYPE,
                 id = start_id,
                 opt = opt
@@ -175,11 +202,9 @@ impl<Id: Args> ItemOper<Id> {
             ItemOper::Download {
                 id,
                 get_opt,
-                name,
                 link_opt,
             } => {
                 let id = id.to_id();
-                let id_str = id.to_string();
                 match driver
                     .download_item::<I, _, _>(
                         &prog.start_item(I::TYPE, id),
@@ -187,7 +212,6 @@ impl<Id: Args> ItemOper<Id> {
                         get_opt.to_config(),
                         !link_opt.link_absolute,
                         PathBuf::from(link_opt.dest.as_str()),
-                        name.as_ref().map_or(id_str.as_str(), |v| v.as_str()),
                     )
                     .await
                 {
@@ -220,6 +244,40 @@ impl<Id: Args> ItemOper<Id> {
                     })
                     .map(|_| id.to_string())
             }
+            ItemOper::Convert {
+                id,
+                dest,
+                operation,
+            } => {
+                try {
+                    let id = id.to_id();
+                    let obj = driver
+                        .store
+                        .get_object::<I>(id, storable::LoadOpt::default())
+                        .context("failed to load object")?;
+                    obj.get_main_content()
+                        .context("can't find document")
+                        .and_then(|d| d.document.as_ref().context("can't find document tree"))
+                        .and_then(|d| {
+                            use content::{
+                                convertor::pandoc::{Pandoc, PandocConfig},
+                                Convertor,
+                            };
+                            Pandoc::convert(
+                                driver.store.image_path(),
+                                d,
+                                &PandocConfig {
+                                    format: match operation {
+                                        ConvertOper::Pandoc { format } => format,
+                                    },
+                                },
+                                dest.as_str(),
+                            )
+                            .map_err(anyhow::Error::new)
+                        })
+                        .map(|_| id.to_string())?
+                }
+            }
         }
         .with_context(|| {
             format!(
@@ -233,7 +291,13 @@ impl<Id: Args> ItemOper<Id> {
         output.write_tagged(
             Color::Green,
             ok_tag,
-            format_args_nl!("{item} {id} {opt}", item = I::TYPE, id = id, opt = opt),
+            format_args_nl!(
+                "{pre}{item} {id} {opt}",
+                pre = pre,
+                item = I::TYPE,
+                id = id,
+                opt = opt
+            ),
         );
         Ok(())
     }
