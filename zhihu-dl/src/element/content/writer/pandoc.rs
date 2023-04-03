@@ -4,14 +4,14 @@ use web_dl_base::media;
 
 fn inline_to_text(inline: &Inline, dest: &mut String) {
     match inline {
-        Inline::Text(t) => dest.extend(t.chars()),
+        Inline::Text(t) => dest.push_str(t.as_str()),
         Inline::Break => dest.push('\n'),
-        Inline::Code { code } => dest.extend(code.chars()),
+        Inline::Code { code } => dest.push_str(code.as_str()),
         Inline::Emphasis(e) => e.iter().for_each(|i| inline_to_text(i, dest)),
         Inline::Strong(s) => s.iter().for_each(|i| inline_to_text(i, dest)),
-        Inline::Math { tex_code } => dest.extend(tex_code.chars()),
+        Inline::Math { tex_code } => dest.push_str(tex_code.as_str()),
         Inline::Note { .. } => (),
-        Inline::Image { alt_text, .. } => alt_text.iter().for_each(|t| dest.extend(t.chars())),
+        Inline::Image { alt_text, .. } => alt_text.iter().for_each(|t| dest.push_str(t.as_str())),
         Inline::Link { description, .. } => description
             .iter()
             .for_each(|v| v.iter().for_each(|i| inline_to_text(i, dest))),
@@ -108,10 +108,9 @@ fn proc_block(block: Block, images_store: &Path) -> pandoc_ast::Block {
             pandoc_ast::Block::BlockQuote(proc_blocks(content, images_store))
         }
         Block::CodeBlock { language, code } => pandoc_ast::Block::CodeBlock(
-            language.map_or_else(
-                || pandoc_ast::Attr::default(),
-                |l| (String::default(), Vec::from([l]), Vec::default()),
-            ),
+            language.map_or_else(pandoc_ast::Attr::default, |l| {
+                (String::default(), Vec::from([l]), Vec::default())
+            }),
             code,
         ),
         Block::Figure {

@@ -851,7 +851,7 @@ async fn run_cli(
 
     if let Some(v) = cli.command {
         init_driver(&mut driver, output).await?;
-        v.run(&mut driver, output, &reporter).await?;
+        v.run(&mut driver, output, reporter).await?;
         return save_state(&mut driver, output);
     }
     let mut editor = rustyline::Editor::<(), _>::with_history(
@@ -935,7 +935,7 @@ fn main() {
         slog::o!(),
     );
     let _scope_guard = slog_scope::set_global_logger(log);
-    let _std_log_guard = slog_stdlog::init().unwrap();
+    slog_stdlog::init().unwrap();
 
     let mut output = Output {
         progress_bar: reporter.multi_progress.clone(),

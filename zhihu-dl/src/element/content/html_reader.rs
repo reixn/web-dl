@@ -268,7 +268,7 @@ fn proc_table<'a>(
         if !node.is_comment() {
             log::warn!("unexpected table {} node: {:#?}", context, node);
         }
-        return false;
+        false
     }
     let mut ret = Vec::new();
     for i in root.children() {
