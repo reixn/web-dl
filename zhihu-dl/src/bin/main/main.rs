@@ -211,8 +211,8 @@ fn main() {
     let reporter = ProgressReporter::new(None);
 
     let log = slog::Logger::root(
-        {
-            let mut lb = slog_envlogger::LogBuilder::new(std::sync::Mutex::new(
+        std::sync::Mutex::new({
+            let mut lb = slog_envlogger::LogBuilder::new(
                 (LogDrain {
                     progress_bar: reporter.multi_progress.clone(),
                     term: slog_term::FullFormat::new(
@@ -222,7 +222,7 @@ fn main() {
                     .fuse(),
                 })
                 .fuse(),
-            ));
+            );
             if let Some(v) = cmd.verbosity {
                 lb = lb.filter(
                     None,
@@ -236,12 +236,15 @@ fn main() {
                         Verbosity::Debug => slog::FilterLevel::Debug,
                     },
                 );
+            } else {
+                lb = lb.filter(None, slog::FilterLevel::Warning);
             }
             if let Ok(v) = std::env::var("RUST_LOG") {
                 lb = lb.parse(v.as_str());
             }
             lb.build().fuse()
-        },
+        })
+        .fuse(),
         slog::o!(),
     );
     let _scope_guard = slog_scope::set_global_logger(log);
