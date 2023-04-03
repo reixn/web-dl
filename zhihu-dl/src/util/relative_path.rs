@@ -124,7 +124,7 @@ pub(crate) fn link_to_dest(
         });
     }
     let link_source =
-        relative_path_to(store_path, dest_parent).ok_or_else(|| LinkError::DifferentPrefix {
+        relative_path_to(store_path, dest).ok_or_else(|| LinkError::DifferentPrefix {
             store_path: store_path.to_path_buf(),
             dest: dest.to_path_buf(),
         })?;
