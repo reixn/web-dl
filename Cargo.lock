@@ -2442,6 +2442,7 @@ dependencies = [
 name = "web_dl_base"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base16",
  "log",
  "mime2ext",

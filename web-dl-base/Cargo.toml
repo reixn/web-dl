@@ -18,3 +18,4 @@ sha2 = "0.10.6"
 web_dl_derive = { path = "../web-dl-derive" }
 thiserror = "1.0.40"
 ron = "0.8.0"
+anyhow = "1.0.70"

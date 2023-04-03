@@ -213,12 +213,15 @@ where
     let mut ret = Vec::new();
     for url in imgs {
         let mut prog = images_prog.start_image(&url);
+        if url.scheme() == "data" {
+            continue;
+        }
         match fetch_image(client, &mut prog, url).await {
             Ok(re) => {
                 ret.push(re);
             }
             Err(e) => {
-                log::warn!("failed to fetch image: {}", e);
+                log::warn!("failed to fetch image: {:?}", anyhow::Error::new(e));
             }
         }
     }
@@ -276,7 +279,7 @@ impl Image {
                 let mut prog = images_prog.start_image(&url);
                 match fetch_image(client, &mut prog, url).await {
                     Ok(r) => *self = Self::Ref(r),
-                    Err(e) => log::warn!("failed to fetch image {}", e),
+                    Err(e) => log::warn!("failed to fetch image {:?}", anyhow::Error::new(e)),
                 }
                 true
             }
