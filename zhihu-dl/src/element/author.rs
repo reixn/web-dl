@@ -95,6 +95,7 @@ pub struct Author {
     pub version: MinVersion<VERSION>,
     pub id: UserId,
     pub name: String,
+    pub url_token: String,
     pub user_type: UserType,
     pub headline: String,
 }
@@ -108,6 +109,7 @@ impl<'de> Deserialize<'de> for FromRaw<Option<Author>> {
             id: FromRaw<Option<UserId>>,
             name: String,
             user_type: FromRaw<UserType>,
+            url_token: String,
             headline: String,
         }
         Reply::deserialize(deserializer).map(|dat| {
@@ -116,6 +118,7 @@ impl<'de> Deserialize<'de> for FromRaw<Option<Author>> {
                     version: MinVersion(VERSION),
                     id: i,
                     name: dat.name,
+                    url_token: dat.url_token,
                     user_type: dat.user_type.0,
                     headline: dat.headline,
                 }),
