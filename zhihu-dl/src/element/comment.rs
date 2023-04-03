@@ -61,7 +61,7 @@ impl HasId for Comment {
 }
 impl HasContent for Comment {
     fn convert_html(&mut self) {
-        self.content.convert_html();
+        self.content.convert_inline();
     }
     fn get_main_content(&self) -> Option<&'_ Content> {
         Some(&self.content)

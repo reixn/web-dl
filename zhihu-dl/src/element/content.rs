@@ -8,7 +8,10 @@ use html5ever::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 use web_dl_base::{
     media::{fetch_images_iter, HasImage, ImageRef},
     storable::Storable,
@@ -87,6 +90,19 @@ impl Default for Content {
 }
 
 impl Content {
+    fn image_map(&self) -> HashMap<&'_ str, &'_ ImageRef> {
+        self.info
+            .images
+            .iter()
+            .map(|i| (i.url.as_str(), i))
+            .collect()
+    }
+    pub fn convert_inline(&mut self) {
+        self.document = self
+            .raw_html
+            .as_ref()
+            .map(|d| html_reader::from_raw_html_inline(d, &self.image_map()))
+    }
     pub(crate) fn image_urls(&self) -> HashSet<Url> {
         let html = match &self.raw_html {
             Some(h) => h,
@@ -183,15 +199,10 @@ pub trait HasContent {
 
 impl HasContent for Content {
     fn convert_html(&mut self) {
-        self.document = self.raw_html.as_ref().map(|h| {
-            let mp = self
-                .info
-                .images
-                .iter()
-                .map(|i| (i.url.as_str(), i))
-                .collect();
-            html_reader::from_raw_html(h.as_str(), &mp)
-        });
+        self.document = self
+            .raw_html
+            .as_ref()
+            .map(|h| html_reader::from_raw_html(h.as_str(), &self.image_map()));
     }
     fn get_main_content(&self) -> Option<&'_ Content> {
         Some(self)

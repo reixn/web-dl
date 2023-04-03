@@ -106,8 +106,8 @@ impl super::Fetchable for Column {
 }
 impl HasContent for Column {
     fn convert_html(&mut self) {
-        self.intro.convert_html();
-        self.description.convert_html();
+        self.intro.convert_inline();
+        self.description.convert_inline();
     }
     fn get_main_content(&self) -> Option<&'_ Content> {
         Some(&self.description)

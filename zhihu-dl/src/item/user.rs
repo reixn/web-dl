@@ -86,7 +86,7 @@ impl super::Fetchable for User {
 }
 impl HasContent for User {
     fn convert_html(&mut self) {
-        self.description.convert_html();
+        self.description.convert_inline();
     }
     fn get_main_content(&self) -> Option<&'_ Content> {
         Some(&self.description)

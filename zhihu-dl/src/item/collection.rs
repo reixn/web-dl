@@ -90,7 +90,7 @@ impl super::Fetchable for Collection {
 }
 impl HasContent for Collection {
     fn convert_html(&mut self) {
-        self.description.convert_html();
+        self.description.convert_inline();
         self.comments.convert_html();
     }
     fn get_main_content(&self) -> Option<&'_ Content> {

@@ -391,3 +391,16 @@ pub fn from_raw_html<'a>(
         ),
     }
 }
+
+pub fn from_raw_html_inline<'a>(
+    input: &str,
+    image_map: &HashMap<&'a str, &'a media::ImageRef>,
+) -> Document {
+    Document {
+        version: VERSION,
+        data: Vec::from([Block::Plain(proc_inlines(
+            *scraper::Html::parse_fragment(input).root_element(),
+            image_map,
+        ))]),
+    }
+}
