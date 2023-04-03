@@ -6,9 +6,9 @@ use crate::{
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::{borrow::Borrow, fmt::Display, str::FromStr};
 use web_dl_base::{
-    id::HasId,
+    id::{HasId, OwnedId},
     media::{HasImage, Image},
     storable::Storable,
 };
@@ -18,6 +18,22 @@ pub struct ColumnId(pub String);
 impl Display for ColumnId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl FromStr for ColumnId {
+    type Err = <String as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(String::from(s)))
+    }
+}
+impl OwnedId<Column> for ColumnId {
+    fn to_id(&self) -> <Column as HasId>::Id<'_> {
+        ColumnRef(self.0.as_str())
+    }
+}
+impl Borrow<str> for ColumnId {
+    fn borrow(&self) -> &str {
+        self.0.as_str()
     }
 }
 
@@ -49,16 +65,24 @@ pub struct Column {
     pub raw_data: Option<RawData>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ColumnRef<'a>(pub &'a str);
+impl<'a> Display for ColumnRef<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
 impl HasId for Column {
     const TYPE: &'static str = "column";
-    type Id<'a> = &'a ColumnId;
+    type Id<'a> = ColumnRef<'a>;
     fn id(&self) -> Self::Id<'_> {
-        &self.info.id
+        ColumnRef(self.info.id.0.as_str())
     }
 }
 impl BasicStoreItem for Column {
     fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
-        info.column.contains(id)
+        info.column.contains(id.0)
     }
     fn add_info(&self, info: &mut crate::store::StoreObject) {
         info.column.insert(self.info.id.clone());

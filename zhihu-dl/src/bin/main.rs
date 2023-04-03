@@ -8,7 +8,10 @@ use std::{
     path::PathBuf,
 };
 use termcolor::{BufferedStandardStream, Color, ColorSpec, WriteColor};
-use web_dl_base::{id::HasId, media};
+use web_dl_base::{
+    id::{HasId, OwnedId},
+    media,
+};
 use zhihu_dl::{
     driver::Driver,
     item::{
@@ -16,7 +19,7 @@ use zhihu_dl::{
         any::Any,
         article::{Article, ArticleId},
         collection::{Collection, CollectionId},
-        column::{Column, ColumnId, ColumnItem},
+        column::{Column, ColumnItem, ColumnRef},
         pin::{Pin, PinId},
         question::{Question, QuestionId},
         user::{self, User, UserId},
@@ -63,7 +66,7 @@ impl Output {
     }
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Copy, Args)]
 struct GetOpt {
     #[arg(long)]
     comments: bool,
@@ -87,13 +90,17 @@ struct LinkOpt {
 }
 
 #[derive(Debug, Subcommand)]
-enum ItemOper {
+enum ItemOper<Id: Args> {
     /// download and add to store, but not link
     Get {
+        #[command(flatten)]
+        id: Id,
         #[command(flatten)]
         get_opt: GetOpt,
     },
     Download {
+        #[command(flatten)]
+        id: Id,
         #[command(flatten)]
         get_opt: GetOpt,
         #[arg(long)]
@@ -103,65 +110,92 @@ enum ItemOper {
     },
     Update {
         #[command(flatten)]
+        id: Id,
+        #[command(flatten)]
         get_opt: GetOpt,
     },
 }
-impl ItemOper {
+impl<Id: Args> ItemOper<Id> {
     async fn run<I>(
         self,
         driver: &mut Driver,
         output: &mut Output,
-        id: <I as HasId>::Id<'_>,
         prog: &ProgressReporter,
     ) -> Result<(), anyhow::Error>
     where
         I: Fetchable + Item + media::HasImage + store::BasicStoreItem,
+        Id: OwnedId<I>,
     {
-        if !driver.is_initialized() {
-            anyhow::bail!("client is not initialized");
-        }
-        let (start_tag, ok_tag, name, opt) = match &self {
-            ItemOper::Get { get_opt } => ("Getting", "Got", "get", format!("({})", get_opt)),
-            ItemOper::Download {
+        let (start_tag, start_id, ok_tag, name, opt, require_init) = match &self {
+            Self::Get { id, get_opt } => (
+                "Getting",
+                format!(" {}", id.to_id()),
+                "Got",
+                "get",
+                format!("({})", get_opt),
+                true,
+            ),
+            Self::Download {
                 get_opt,
+                id,
                 name,
                 link_opt,
-            } => ("Downloading", "Downloaded", "download", {
-                let mut parent = PathBuf::from(link_opt.dest.as_str());
-                match &name {
-                    Some(n) => parent.push(n.as_str()),
-                    None => parent.push(id.to_string()),
-                };
-                format!(
-                    "({}) to {}[{}]",
-                    get_opt,
-                    parent.display(),
-                    if link_opt.link_absolute {
-                        "link absolute"
-                    } else {
-                        "link relative"
-                    }
-                )
-            }),
-            ItemOper::Update { get_opt } => {
-                ("Updating", "Updated", "update", format!("({})", get_opt))
-            }
+            } => (
+                "Downloading",
+                format!(" {}", id.to_id()),
+                "Downloaded",
+                "download",
+                {
+                    let mut parent = PathBuf::from(link_opt.dest.as_str());
+                    match &name {
+                        Some(n) => parent.push(n.as_str()),
+                        None => parent.push(id.to_id().to_string()),
+                    };
+                    format!(
+                        "({}) to {}[{}]",
+                        get_opt,
+                        parent.display(),
+                        if link_opt.link_absolute {
+                            "link absolute"
+                        } else {
+                            "link relative"
+                        }
+                    )
+                },
+                true,
+            ),
+            Self::Update { id, get_opt } => (
+                "Updating",
+                format!(" {}", id.to_id()),
+                "Updated",
+                "update",
+                format!("({})", get_opt),
+                true,
+            ),
         };
+        if require_init && !driver.is_initialized() {
+            anyhow::bail!("client is not initialized");
+        }
         output.write_tagged(
             Color::Cyan,
             start_tag,
-            format_args_nl!("{item} {id} {opt}", item = I::TYPE, id = id, opt = opt),
+            format_args_nl!("{item}{id} {opt}", item = I::TYPE, id = start_id, opt = opt),
         );
-        match self {
-            ItemOper::Get { get_opt } => driver
-                .get_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.comments)
-                .await
-                .map(|_| ()),
+        let id = match self {
+            ItemOper::Get { id, get_opt } => {
+                let id = id.to_id();
+                driver
+                    .get_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.comments)
+                    .await
+                    .map(|_| id.to_string())
+            }
             ItemOper::Download {
+                id,
                 get_opt,
                 name,
                 link_opt,
             } => {
+                let id = id.to_id();
                 let id_str = id.to_string();
                 driver
                     .download_item::<I, _, _>(
@@ -173,19 +207,22 @@ impl ItemOper {
                         name.as_ref().map_or(id_str.as_str(), |v| v.as_str()),
                     )
                     .await
-                    .map(|_| ())
+                    .map(|_| id.to_string())
             }
-            ItemOper::Update { get_opt } => driver
-                .update_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.comments)
-                .await
-                .map(|_| ()),
+            ItemOper::Update { id, get_opt } => {
+                let id = id.to_id();
+                driver
+                    .update_item::<I, _>(&prog.start_item(I::TYPE, id), id, get_opt.comments)
+                    .await
+                    .map(|_| id.to_string())
+            }
         }
         .with_context(|| {
             format!(
-                "failed to {verb} {item} {id} {opt}",
+                "failed to {verb} {item}{id} {opt}",
                 verb = name,
                 item = I::TYPE,
-                id = id,
+                id = start_id,
                 opt = opt
             )
         })?;
@@ -205,50 +242,83 @@ struct UserSpec {
     #[arg(long)]
     url_token: String,
 }
+impl OwnedId<User> for UserSpec {
+    fn to_id(&self) -> <User as HasId>::Id<'_> {
+        user::StoreId(self.id, self.url_token.as_str())
+    }
+}
+
+#[derive(Debug, Args)]
+struct NumId {
+    #[arg(long)]
+    id: u64,
+}
+impl OwnedId<Answer> for NumId {
+    fn to_id(&self) -> <Answer as HasId>::Id<'_> {
+        AnswerId(self.id)
+    }
+}
+impl OwnedId<Article> for NumId {
+    fn to_id(&self) -> <Article as HasId>::Id<'_> {
+        ArticleId(self.id)
+    }
+}
+impl OwnedId<Collection> for NumId {
+    fn to_id(&self) -> <Collection as HasId>::Id<'_> {
+        CollectionId(self.id)
+    }
+}
+impl OwnedId<Question> for NumId {
+    fn to_id(&self) -> <Question as HasId>::Id<'_> {
+        QuestionId(self.id)
+    }
+}
+impl OwnedId<Pin> for NumId {
+    fn to_id(&self) -> <Pin as HasId>::Id<'_> {
+        PinId(self.id)
+    }
+}
+
+#[derive(Debug, Args)]
+struct StrId {
+    #[arg(long)]
+    id: String,
+}
+impl OwnedId<Column> for StrId {
+    fn to_id(&self) -> <Column as HasId>::Id<'_> {
+        ColumnRef(self.id.as_str())
+    }
+}
 
 #[derive(Debug, Subcommand)]
 enum ItemCmd {
     Answer {
-        #[arg(long)]
-        id: u64,
         #[command(subcommand)]
-        operation: ItemOper,
+        operation: ItemOper<NumId>,
     },
     Article {
-        #[arg(long)]
-        id: u64,
         #[command(subcommand)]
-        operation: ItemOper,
+        operation: ItemOper<NumId>,
     },
     Collection {
-        #[arg(long)]
-        id: u64,
         #[command(subcommand)]
-        operation: ItemOper,
+        operation: ItemOper<NumId>,
     },
     Column {
-        #[arg(long)]
-        id: String,
         #[command(subcommand)]
-        operation: ItemOper,
+        operation: ItemOper<StrId>,
     },
     Pin {
-        #[arg(long)]
-        id: u64,
         #[command(subcommand)]
-        operation: ItemOper,
+        operation: ItemOper<NumId>,
     },
     Question {
-        #[arg(long)]
-        id: u64,
         #[command(subcommand)]
-        operation: ItemOper,
+        operation: ItemOper<NumId>,
     },
     User {
-        #[command(flatten)]
-        user_id: UserSpec,
         #[command(subcommand)]
-        operation: ItemOper,
+        operation: ItemOper<UserSpec>,
     },
 }
 impl ItemCmd {
@@ -259,75 +329,69 @@ impl ItemCmd {
         prog: &ProgressReporter,
     ) -> Result<(), anyhow::Error> {
         macro_rules! run {
-            ($( ($t:ident, $i:expr) ),*) => {
+            ($($t:ident),*) => {
                 match self {
-                    $(ItemCmd::$t { id, operation } => {
+                    $(ItemCmd::$t { operation } => {
                         operation
-                            .run::<$t>(driver, output, $i(id), prog)
+                            .run::<$t>(driver, output, prog)
                             .await
                     })+
-                    ItemCmd::Column { id, operation } => {
-                        operation
-                            .run::<Column>(driver, output, &ColumnId(id), prog)
-                            .await
-                     }
-                    ItemCmd::User { user_id, operation } => {
-                        operation
-                            .run::<User>(
-                                driver,
-                                output,
-                                user::StoreId(user_id.id, user_id.url_token.as_str()),
-                                prog,
-                            )
-                            .await
-                    }
                 }
             };
         }
-        run!(
-            (Answer, AnswerId),
-            (Article, ArticleId),
-            (Collection, CollectionId),
-            (Question, QuestionId),
-            (Pin, PinId)
-        )
+        run!(Answer, Article, Collection, Column, Question, Pin, User)
     }
 }
 
 #[derive(Debug, Subcommand)]
-enum ContainerOper {
+enum ContainerOper<Id: Args> {
     Get {
+        #[command(flatten)]
+        id: Id,
         #[command(flatten)]
         get_opt: GetOpt,
     },
     Download {
+        #[command(flatten)]
+        id: Id,
         #[command(flatten)]
         get_opt: GetOpt,
         #[command(flatten)]
         link_opt: LinkOpt,
     },
 }
-impl ContainerOper {
+impl<Id: Args> ContainerOper<Id> {
     async fn run<IC, I, O>(
         self,
         driver: &mut Driver,
         output: &mut Output,
         prog: &ProgressReporter,
-        id: <IC as HasId>::Id<'_>,
         option: O,
     ) -> Result<(), anyhow::Error>
     where
         I: Item + media::HasImage + store::StoreItem,
+        Id: OwnedId<IC>,
         O: Display + Copy,
         IC: ItemContainer<I, O>,
     {
         if !driver.is_initialized() {
             anyhow::bail!("client is not initialized");
         }
-        let (start_tag, ok_tag, name, opt) = match &self {
-            Self::Get { get_opt } => ("Getting", "Got", "get", format!("({})", get_opt)),
-            Self::Download { get_opt, link_opt } => (
+        let (start_tag, con_id, ok_tag, name, opt) = match &self {
+            Self::Get { id, get_opt } => (
+                "Getting",
+                id.to_id().to_string(),
+                "Got",
+                "get",
+                format!("({})", get_opt),
+            ),
+            Self::Download {
+                id,
+                get_opt,
+                link_opt,
+            } => (
                 "Downloading",
+                id.to_id().to_string(),
                 "Downloaded",
                 "download",
                 format!(
@@ -350,12 +414,13 @@ impl ContainerOper {
                 item = I::TYPE,
                 opt = option,
                 container = IC::TYPE,
-                con_id = id,
+                con_id = con_id,
                 oper_opt = opt
             ),
         );
         let v = match self {
-            Self::Get { get_opt } => {
+            Self::Get { id, get_opt } => {
+                let id = id.to_id();
                 driver
                     .get_container::<IC, I, O, _>(
                         &prog.start_item_container(IC::TYPE, id, I::TYPE),
@@ -365,7 +430,12 @@ impl ContainerOper {
                     )
                     .await
             }
-            Self::Download { get_opt, link_opt } => {
+            Self::Download {
+                id,
+                get_opt,
+                link_opt,
+            } => {
+                let id = id.to_id();
                 driver
                     .download_container::<IC, I, O, _, _>(
                         &prog.start_item_container(IC::TYPE, id, I::TYPE),
@@ -385,7 +455,7 @@ impl ContainerOper {
                 item = I::TYPE,
                 option = option,
                 container = IC::TYPE,
-                con_id = id,
+                con_id = con_id,
                 oper_opt = opt
             )
         })?;
@@ -398,7 +468,7 @@ impl ContainerOper {
                 item = I::TYPE,
                 opt = option,
                 container = IC::TYPE,
-                con_id = id,
+                con_id = con_id,
                 oper_opt = opt
             ),
         );
@@ -410,7 +480,7 @@ impl ContainerOper {
 enum CollectionEntry {
     Item {
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<NumId>,
     },
 }
 
@@ -420,14 +490,14 @@ enum ColumnEntry {
         #[arg(long)]
         pinned: bool,
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<StrId>,
     },
 }
 #[derive(Debug, Subcommand)]
 enum QuestionEntry {
     Answer {
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<NumId>,
     },
 }
 
@@ -440,44 +510,38 @@ enum CollectionTyp {
 enum UserEntry {
     Answer {
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<UserSpec>,
     },
     Article {
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<UserSpec>,
     },
     Column {
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<UserSpec>,
     },
     Collection {
         #[arg(long = "type")]
         typ: CollectionTyp,
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<UserSpec>,
     },
     Pin {
         #[command(subcommand)]
-        operation: ContainerOper,
+        operation: ContainerOper<UserSpec>,
     },
 }
 #[derive(Debug, Subcommand)]
 enum ContainerCmd {
     Collection {
-        #[arg(long)]
-        id: u64,
         #[command(subcommand)]
         operation: CollectionEntry,
     },
     Column {
-        #[arg(long)]
-        id: String,
         #[command(subcommand)]
         operation: ColumnEntry,
     },
     User {
-        #[command(flatten)]
-        user_id: UserSpec,
         #[command(subcommand)]
         operation: UserEntry,
     },
@@ -491,15 +555,13 @@ impl ContainerCmd {
     ) -> Result<(), anyhow::Error> {
         match self {
             Self::Collection {
-                id,
                 operation: CollectionEntry::Item { operation },
             } => {
                 operation
-                    .run::<Collection, Any, _>(driver, output, prog, CollectionId(id), VoidOpt)
+                    .run::<Collection, Any, _>(driver, output, prog, VoidOpt)
                     .await
             }
             Self::Column {
-                id,
                 operation: ColumnEntry::Item { pinned, operation },
             } => {
                 operation
@@ -507,7 +569,6 @@ impl ContainerCmd {
                         driver,
                         output,
                         prog,
-                        &ColumnId(id),
                         if pinned {
                             ColumnItem::Pinned
                         } else {
@@ -516,45 +577,41 @@ impl ContainerCmd {
                     )
                     .await
             }
-            Self::User { user_id, operation } => {
-                let user_id = user::StoreId(user_id.id, user_id.url_token.as_str());
-                match operation {
-                    UserEntry::Answer { operation } => {
-                        operation
-                            .run::<User, Answer, _>(driver, output, prog, user_id, VoidOpt)
-                            .await
-                    }
-                    UserEntry::Article { operation } => {
-                        operation
-                            .run::<User, Article, _>(driver, output, prog, user_id, VoidOpt)
-                            .await
-                    }
-                    UserEntry::Collection { typ, operation } => {
-                        operation
-                            .run::<User, Collection, _>(
-                                driver,
-                                output,
-                                prog,
-                                user_id,
-                                match typ {
-                                    CollectionTyp::Created => user::CollectionOpt::Created,
-                                    CollectionTyp::Liked => user::CollectionOpt::Liked,
-                                },
-                            )
-                            .await
-                    }
-                    UserEntry::Column { operation } => {
-                        operation
-                            .run::<User, Column, _>(driver, output, prog, user_id, VoidOpt)
-                            .await
-                    }
-                    UserEntry::Pin { operation } => {
-                        operation
-                            .run::<User, Pin, _>(driver, output, prog, user_id, VoidOpt)
-                            .await
-                    }
+            Self::User { operation } => match operation {
+                UserEntry::Answer { operation } => {
+                    operation
+                        .run::<User, Answer, _>(driver, output, prog, VoidOpt)
+                        .await
                 }
-            }
+                UserEntry::Article { operation } => {
+                    operation
+                        .run::<User, Article, _>(driver, output, prog, VoidOpt)
+                        .await
+                }
+                UserEntry::Collection { typ, operation } => {
+                    operation
+                        .run::<User, Collection, _>(
+                            driver,
+                            output,
+                            prog,
+                            match typ {
+                                CollectionTyp::Created => user::CollectionOpt::Created,
+                                CollectionTyp::Liked => user::CollectionOpt::Liked,
+                            },
+                        )
+                        .await
+                }
+                UserEntry::Column { operation } => {
+                    operation
+                        .run::<User, Column, _>(driver, output, prog, VoidOpt)
+                        .await
+                }
+                UserEntry::Pin { operation } => {
+                    operation
+                        .run::<User, Pin, _>(driver, output, prog, VoidOpt)
+                        .await
+                }
+            },
         }
     }
 }
