@@ -108,6 +108,12 @@ enum ItemOper<Id: Args> {
         #[command(flatten)]
         get_opt: GetOpt,
     },
+    AddRaw {
+        #[command(flatten)]
+        get_opt: GetOpt,
+        #[arg(value_hint = clap::ValueHint::AnyPath)]
+        path: String,
+    },
     Download {
         #[command(flatten)]
         id: Id,
@@ -129,6 +135,32 @@ enum ItemOper<Id: Args> {
         id: Id,
     },
 }
+
+async fn add_raw<I>(
+    driver: &mut Driver,
+    prog: &ProgressReporter,
+    get_opt: GetOpt,
+    path: String,
+) -> anyhow::Result<String>
+where
+    I: Item + media::HasImage + store::BasicStoreItem,
+{
+    match driver
+        .add_raw_item::<I, _>(
+            &prog.start_item(I::TYPE, "<raw data>"),
+            serde_json::from_reader(std::io::BufReader::new(
+                std::fs::File::open(PathBuf::from(path.as_str()).as_path())
+                    .with_context(|| format!("failed to open file {}", path))?,
+            ))
+            .context("failed to parse response to json value")?,
+            get_opt.to_config(),
+        )
+        .await
+    {
+        Ok(i) => Ok(i.id().to_string()),
+        Err(e) => Err(anyhow::Error::new(e)),
+    }
+}
 impl<Id: Args> ItemOper<Id> {
     async fn run<I>(
         self,
@@ -143,10 +175,18 @@ impl<Id: Args> ItemOper<Id> {
         let (start_tag, start_id, ok_tag, name, opt, require_init) = match &self {
             Self::Get { id, get_opt } => (
                 "Getting",
-                format!(" {}", id.to_id()),
+                format!("{}", id.to_id()),
                 "Got",
                 "get",
                 format!("({})", get_opt),
+                true,
+            ),
+            Self::AddRaw { get_opt, path } => (
+                "Adding",
+                String::from("<raw data>"),
+                "Added",
+                "add",
+                format!("({}) from {}", get_opt, path),
                 true,
             ),
             Self::Download {
@@ -201,7 +241,12 @@ impl<Id: Args> ItemOper<Id> {
         output.write_tagged(
             Color::Cyan,
             start_tag,
-            format_args_nl!("{item}{id} {opt}", item = I::TYPE, id = start_id, opt = opt),
+            format_args_nl!(
+                "{item} {id} {opt}",
+                item = I::TYPE,
+                id = start_id,
+                opt = opt
+            ),
         );
         let id = match self {
             ItemOper::Get { id, get_opt } => {
@@ -214,6 +259,7 @@ impl<Id: Args> ItemOper<Id> {
                     Err(e) => Err(anyhow::Error::new(e)),
                 }
             }
+            ItemOper::AddRaw { get_opt, path } => add_raw::<I>(driver, prog, get_opt, path).await,
             ItemOper::Download {
                 id,
                 get_opt,
@@ -265,7 +311,7 @@ impl<Id: Args> ItemOper<Id> {
         }
         .with_context(|| {
             format!(
-                "failed to {verb} {item}{id} {opt}",
+                "failed to {verb} {item} {id} {opt}",
                 verb = name,
                 item = I::TYPE,
                 id = start_id,

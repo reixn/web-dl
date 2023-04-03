@@ -271,6 +271,34 @@ impl Driver {
         Ok(())
     }
 
+    async fn process_response<I, P>(
+        &mut self,
+        prog: &P,
+        data: serde_json::Value,
+        config: GetConfig,
+    ) -> Result<(I, PathBuf), ItemError>
+    where
+        I: Item + media::HasImage + BasicStoreItem,
+        P: progress::ItemProg,
+    {
+        let mut ret: I = I::from_reply(
+            I::Reply::deserialize(&data).map_err(ItemError::from)?,
+            RawData {
+                info: RawDataInfo {
+                    fetch_time: Utc::now(),
+                    container: raw_data::Container::None,
+                },
+                data,
+            },
+        );
+        self.process_item(prog, &mut ret, config).await?;
+        log::info!("add item {} {} to store", I::TYPE, ret.id());
+        let dest = self.store.add_object(&ret).map_err(ItemError::from)?;
+        log::debug!("store path: {}", dest.display());
+        self.store.add_media(&ret).map_err(ItemError::from)?;
+        Ok((ret, dest))
+    }
+
     async fn update_item_impl<'a, I, P>(
         &mut self,
         prog: &P,
@@ -281,27 +309,17 @@ impl Driver {
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
         P: progress::ItemProg,
     {
-        let mut ret: I = {
-            log::info!("fetching raw data for {} {}", I::TYPE, id);
-            let data = I::fetch(&self.client, id).await.map_err(ItemError::from)?;
-            log::trace!("raw data {:#?}", data);
-            I::from_reply(
-                I::Reply::deserialize(&data).map_err(ItemError::from)?,
-                RawData {
-                    info: RawDataInfo {
-                        fetch_time: Utc::now(),
-                        container: raw_data::Container::None,
-                    },
-                    data,
-                },
-            )
-        };
-        self.process_item(prog, &mut ret, config).await?;
-        log::info!("add item {} {} to store", I::TYPE, ret.id());
-        let dest = self.store.add_object(&ret).map_err(ItemError::from)?;
-        log::debug!("store path: {}", dest.display());
-        self.store.add_media(&ret).map_err(ItemError::from)?;
-        Ok((ret, dest))
+        self.process_response(
+            prog,
+            {
+                log::info!("fetching raw data for {} {}", I::TYPE, id);
+                let data = I::fetch(&self.client, id).await.map_err(ItemError::from)?;
+                log::trace!("raw data {:#?}", data);
+                data
+            },
+            config,
+        )
+        .await
     }
 
     pub async fn get_item<'a, I, P>(
@@ -319,6 +337,18 @@ impl Driver {
         } else {
             Some(self.update_item_impl(prog, id, config).await?.0)
         })
+    }
+    pub async fn add_raw_item<I, P>(
+        &mut self,
+        prog: &P,
+        data: serde_json::Value,
+        config: GetConfig,
+    ) -> Result<I, ItemError>
+    where
+        I: Item + media::HasImage + BasicStoreItem,
+        P: progress::ItemProg,
+    {
+        self.process_response(prog, data, config).await.map(|v| v.0)
     }
 
     pub async fn download_item<'a, I, P, Pat>(
