@@ -9,7 +9,7 @@ use std::{
 };
 use web_dl_base::utils::bytes;
 
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UserType {
@@ -95,7 +95,7 @@ pub struct Author {
     pub version: MinVersion<VERSION>,
     pub id: UserId,
     pub name: String,
-    pub url_token: String,
+    pub url_token: Option<String>,
     pub user_type: UserType,
     pub headline: String,
 }
@@ -109,7 +109,7 @@ impl<'de> Deserialize<'de> for FromRaw<Option<Author>> {
             id: FromRaw<Option<UserId>>,
             name: String,
             user_type: FromRaw<UserType>,
-            url_token: String,
+            url_token: Option<String>,
             headline: String,
         }
         Reply::deserialize(deserializer).map(|dat| {
