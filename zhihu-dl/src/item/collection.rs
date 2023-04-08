@@ -2,7 +2,7 @@ use crate::{
     element::{comment, content::HasContent, Author, Comment, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
-    store::BasicStoreItem,
+    store::{self, BasicStoreItem, StoreItemContainer},
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -66,10 +66,10 @@ impl HasId for Collection {
 }
 
 impl BasicStoreItem for Collection {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
         info.collection.contains(&id)
     }
-    fn add_info(&self, info: &mut crate::store::StoreObject) {
+    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
         info.collection.insert(self.info.id);
     }
 }
@@ -155,12 +155,20 @@ impl super::Item for Collection {
     }
 }
 
-impl super::ItemContainer<super::any::Any, super::VoidOpt> for Collection {
+impl StoreItemContainer<super::VoidOpt, super::any::Any> for Collection {
+    const OPTION_NAME: &'static str = "item";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.collection.contains(&id)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.collection.insert(id);
+    }
+}
+impl super::ItemContainer<super::VoidOpt, super::any::Any> for Collection {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        _: super::VoidOpt,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged::<{ raw_data::Container::Collection }, _, _>(

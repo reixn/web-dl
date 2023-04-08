@@ -3,7 +3,7 @@ use crate::{
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
-    store::BasicStoreItem,
+    store::{self, BasicStoreItem, StoreItemContainer},
 };
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
@@ -67,10 +67,10 @@ impl HasId for Question {
     }
 }
 impl BasicStoreItem for Question {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
         info.question.contains(&id)
     }
-    fn add_info(&self, info: &mut crate::store::StoreObject) {
+    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
         info.question.insert(self.info.id);
     }
 }
@@ -161,12 +161,20 @@ impl super::Item for Question {
 }
 
 mod param;
-impl super::ItemContainer<super::answer::Answer, super::VoidOpt> for Question {
+impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for Question {
+    const OPTION_NAME: &'static str = "answer";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.question.contains(&id)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.question.insert(id);
+    }
+}
+impl super::ItemContainer<super::VoidOpt, super::answer::Answer> for Question {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        _: super::VoidOpt,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged_sign::<{ raw_data::Container::Question }, Zse96V3, _, _>(

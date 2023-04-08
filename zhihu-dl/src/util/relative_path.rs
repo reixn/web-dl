@@ -90,7 +90,10 @@ where
     Some(ret)
 }
 
-fn symlink<P1: AsRef<Path>, P2: AsRef<Path>>(source: P1, link: P2) -> Result<(), io::Error> {
+pub(crate) fn symlink<P1: AsRef<Path>, P2: AsRef<Path>>(
+    source: P1,
+    link: P2,
+) -> Result<(), io::Error> {
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(source, link)

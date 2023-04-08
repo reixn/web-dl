@@ -2,7 +2,7 @@ use crate::{
     element::content::HasContent,
     item::{
         answer::{self, Answer},
-        any::OtherItem,
+        any::{OtherInfo, OtherItem},
         article::{self, Article},
         collection::{self, Collection},
         column::{self, Column},
@@ -12,10 +12,13 @@ use crate::{
     },
     raw_data::{self, RawData, StrU64},
     request::Zse96V3,
-    store::{LinkInfo, Store, StoreItem},
+    store::{self, LinkInfo, Store, StoreItem, StoreItemContainer},
 };
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, path::PathBuf};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 use web_dl_base::{id::HasId, media::HasImage};
 
 type Id<'a, S> = <S as HasId>::Id<'a>;
@@ -28,7 +31,7 @@ pub enum ActTargetId<'a> {
     Column(Id<'a, column::Column>),
     Pin(Id<'a, pin::Pin>),
     Question(Id<'a, question::Question>),
-    Other(&'a Option<OtherItem>),
+    Other(&'a OtherItem),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -46,8 +49,12 @@ impl<'a> Display for ActivityId<'a> {
             Column(c) => f.write_fmt(format_args!("{} (column {})", self.id, c)),
             Pin(p) => f.write_fmt(format_args!("{} (pin {})", self.id, p)),
             Question(q) => f.write_fmt(format_args!("{} (question {})", self.id, q)),
-            Other(Some(i)) => f.write_fmt(format_args!("{} ({} {})", self.id, i.item_type, i.id)),
-            Other(None) => f.write_fmt(format_args!("{} (unknown)", self.id)),
+            Other(OtherItem { info: Some(i), .. }) => {
+                f.write_fmt(format_args!("{} ({} {})", self.id, i.item_type, i.id))
+            }
+            Other(OtherItem { info: None, .. }) => {
+                f.write_fmt(format_args!("{} (unknown)", self.id))
+            }
         }
     }
 }
@@ -60,10 +67,7 @@ pub enum ActTarget {
     Column(#[has_image] Column),
     Pin(#[has_image] Pin),
     Question(#[has_image] Question),
-    Other {
-        item: Option<OtherItem>,
-        raw_data: RawData,
-    },
+    Other(OtherItem),
 }
 
 #[derive(Deserialize)]
@@ -105,7 +109,7 @@ impl HasId for Activity {
             ($($t:ident),+) => {
                 match &self.target {
                     $(ActTarget::$t(t) => ActivityId { id: self.id, target: ActTargetId::$t(t.id()) },)+
-                    ActTarget::Other { item,.. } => ActivityId {id: self.id, target: ActTargetId::Other(item)}
+                    ActTarget::Other(item) => ActivityId {id: self.id, target: ActTargetId::Other(item)}
                 }
             };
         }
@@ -141,23 +145,20 @@ impl StoreItem for Activity {
         macro_rules! target {
             ($($t:ident),+) => {
                 match id.target {
-                    $(ActTargetId::$t(t) => $t::in_store(t, store),)+
+                    $(ActTargetId::$t(t) => <$t as StoreItem>::in_store(t, store),)+
                     ActTargetId::Other(_) => false
                 }
             };
         }
         target!(Answer, Article, Collection, Column, Question, Pin)
     }
-    fn link_info(id: Self::Id<'_>, store: &Store, dest: Option<PathBuf>) -> Option<LinkInfo> {
+    fn link_info<P: AsRef<Path>>(id: Self::Id<'_>, store: &Store, dest: P) -> Option<LinkInfo> {
         macro_rules! target {
             ($($t:ident),+) => {
                 match id.target {
                     $(ActTargetId::$t(t) => $t::link_info(t, store, dest),)+
                     ActTargetId::Other(it) => {
-                        match it {
-                            Some(it) => log::warn!("skipped unrecognized object ({} {})", it.item_type, it.id),
-                            None => log::warn!("skipped unrecognized object (unknown type,id)")
-                        }
+                        it.warn();
                         None
                     }
                 }
@@ -167,19 +168,32 @@ impl StoreItem for Activity {
     }
     fn save_data(
         &self,
+        store: &mut Store,
+    ) -> Result<Option<PathBuf>, web_dl_base::storable::Error> {
+        macro_rules! target {
+            ($($t:ident),+) => {
+                match &self.target {
+                    $(ActTarget::$t(t) => t.save_data(store),)+
+                    ActTarget::Other(it) => {
+                        it.warn();
+                        Ok(None)
+                    }
+                }
+            };
+        }
+        target!(Answer, Article, Collection, Column, Question, Pin)
+    }
+    fn save_data_link<P: AsRef<Path>>(
+        &self,
         store: &mut crate::store::Store,
-        dest: Option<PathBuf>,
+        dest: P,
     ) -> Result<Option<LinkInfo>, web_dl_base::storable::Error> {
         macro_rules! target {
             ($($t:ident),+) => {
                 match &self.target {
-                    $(ActTarget::$t(t) => t.save_data(store, dest),)+
-                    ActTarget::Other { item, raw_data } => {
-                        match item {
-                            Some(it) => log::warn!("skipped storing unrecognized object ({} {})", it.item_type, it.id),
-                            None => log::warn!("skipped unrecognized object (unknown type,id)")
-                        }
-                        log::trace!("skipped object raw data: {:#?}", raw_data);
+                    $(ActTarget::$t(t) => t.save_data_link(store, dest),)+
+                    ActTarget::Other(it) => {
+                        it.warn();
                         Ok(None)
                     }
                 }
@@ -196,10 +210,10 @@ impl Item for Activity {
             ($($t:ident),+) => {
                 match reply.target {
                     $(TargetReply::$t(t) => ActTarget::$t($t::from_reply(t, raw_data)),)+
-                    TargetReply::Other => ActTarget::Other {
-                        item: OtherItem::deserialize(&raw_data.data).ok(),
+                    TargetReply::Other => ActTarget::Other (OtherItem{
+                        info: OtherInfo::deserialize(&raw_data.data).ok(),
                         raw_data,
-                    },
+                    }),
                 }
             };
         }
@@ -240,12 +254,20 @@ impl Item for Activity {
     }
 }
 
-impl ItemContainer<Activity, VoidOpt> for super::User {
+impl StoreItemContainer<VoidOpt, Activity> for super::User {
+    const OPTION_NAME: &'static str = "item";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.user.get(&id.0).map_or(false, |v| v.activity)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.user.entry(id.0).or_default().activity = true;
+    }
+}
+impl ItemContainer<VoidOpt, Activity> for super::User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        _: VoidOpt,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged_sign::<{ raw_data::Container::Activity }, Zse96V3, _, _>(
@@ -258,7 +280,6 @@ impl ItemContainer<Activity, VoidOpt> for super::User {
         client: &crate::request::Client,
         prog: &P,
         _: Self::Id<'a>,
-        _: VoidOpt,
         data: &mut Activity,
     ) -> Result<bool, reqwest::Error> {
         match &mut data.target {

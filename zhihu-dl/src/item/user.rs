@@ -6,7 +6,7 @@ use crate::{
     progress,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
-    store::BasicStoreItem,
+    store::{self, BasicStoreItem, StoreItemContainer},
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -61,10 +61,10 @@ impl HasId for User {
     }
 }
 impl BasicStoreItem for User {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
         info.user.contains(&id.0)
     }
-    fn add_info(&self, info: &mut crate::store::StoreObject) {
+    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
         info.user.insert(self.info.id);
     }
 }
@@ -145,12 +145,20 @@ impl super::Item for User {
 
 mod param;
 
-impl super::ItemContainer<super::answer::Answer, super::VoidOpt> for User {
+impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for User {
+    const OPTION_NAME: &'static str = "answer";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.user.get(&id.0).map_or(false, |v| v.answer)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.user.entry(id.0).or_default().answer = true;
+    }
+}
+impl super::ItemContainer<super::VoidOpt, super::answer::Answer> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        _: super::VoidOpt,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged_sign::<{ raw_data::Container::User }, Zse96V3, _, _>(
@@ -164,12 +172,21 @@ impl super::ItemContainer<super::answer::Answer, super::VoidOpt> for User {
             .await
     }
 }
-impl super::ItemContainer<super::article::Article, super::VoidOpt> for User {
+
+impl StoreItemContainer<super::VoidOpt, super::article::Article> for User {
+    const OPTION_NAME: &'static str = "article";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.user.get(&id.0).map_or(false, |v| v.article)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.user.entry(id.0).or_default().article = true;
+    }
+}
+impl super::ItemContainer<super::VoidOpt, super::article::Article> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        _: super::VoidOpt,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged_sign::<{ raw_data::Container::User }, Zse96V3, _, _>(
@@ -186,19 +203,26 @@ impl super::ItemContainer<super::article::Article, super::VoidOpt> for User {
         client: &crate::request::Client,
         prog: &P,
         _: Self::Id<'a>,
-        _: super::VoidOpt,
         data: &mut super::article::Article,
     ) -> Result<bool, reqwest::Error> {
         data.fix_cover(client, prog).await.map(|_| true)
     }
 }
 
-impl<'b> super::ItemContainer<super::column::Column, super::VoidOpt> for User {
+impl StoreItemContainer<super::VoidOpt, super::column::Column> for User {
+    const OPTION_NAME: &'static str = "column";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.user.get(&id.0).map_or(false, |v| v.column)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.user.entry(id.0).or_default().column = true;
+    }
+}
+impl<'b> super::ItemContainer<super::VoidOpt, super::column::Column> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        _: super::VoidOpt,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged::<{ raw_data::Container::User }, _, _>(
@@ -225,57 +249,82 @@ impl<'b> super::ItemContainer<super::column::Column, super::VoidOpt> for User {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum CollectionOpt {
-    Created,
-    Liked,
-}
-impl Display for CollectionOpt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Created => f.write_str("created"),
-            Self::Liked => f.write_str("liked"),
-        }
+pub struct Created;
+impl StoreItemContainer<Created, super::collection::Collection> for User {
+    const OPTION_NAME: &'static str = "created";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.user.get(&id.0).map_or(false, |v| v.collection.created)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.user.entry(id.0).or_default().collection.created = true;
     }
 }
-impl super::ItemContainer<super::collection::Collection, CollectionOpt> for User {
+impl super::ItemContainer<Created, super::collection::Collection> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        option: CollectionOpt,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged::<{ raw_data::Container::User }, _, _>(
                 prog.start_fetch(),
-                match option {
-                    CollectionOpt::Created => Url::parse_with_params(
-                        format!("https://www.zhihu.com/api/v4/people/{}/collections", id.1)
-                            .as_str(),
-                        &[("include", param::CREATED_COLL_INCLUDE)],
-                    )
-                    .unwrap(),
-                    CollectionOpt::Liked => Url::parse_with_params(
-                        format!(
-                            "https://www.zhihu.com/api/v4/members/{}/following-favlists",
-                            id.1
-                        )
-                        .as_str(),
-                        &[("include", param::LIKED_COLL_INCLUDE)],
-                    )
-                    .unwrap(),
-                },
+                Url::parse_with_params(
+                    format!("https://www.zhihu.com/api/v4/people/{}/collections", id.1).as_str(),
+                    &[("include", param::CREATED_COLL_INCLUDE)],
+                )
+                .unwrap(),
             )
             .await
     }
 }
 
-impl super::ItemContainer<super::pin::Pin, super::VoidOpt> for User {
+pub struct Liked;
+impl StoreItemContainer<Liked, super::collection::Collection> for User {
+    const OPTION_NAME: &'static str = "liked";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.user.get(&id.0).map_or(false, |v| v.collection.liked)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.user.entry(id.0).or_default().collection.liked = true;
+    }
+}
+impl super::ItemContainer<Liked, super::collection::Collection> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        _: super::VoidOpt,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged::<{ raw_data::Container::User }, _, _>(
+                prog.start_fetch(),
+                Url::parse_with_params(
+                    format!(
+                        "https://www.zhihu.com/api/v4/members/{}/following-favlists",
+                        id.1
+                    )
+                    .as_str(),
+                    &[("include", param::LIKED_COLL_INCLUDE)],
+                )
+                .unwrap(),
+            )
+            .await
+    }
+}
+
+impl StoreItemContainer<super::VoidOpt, super::pin::Pin> for User {
+    const OPTION_NAME: &'static str = "pin";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.user.get(&id.0).map_or(false, |v| v.pin)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.user.entry(id.0).or_default().pin = true;
+    }
+}
+impl super::ItemContainer<super::VoidOpt, super::pin::Pin> for User {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged::<{ raw_data::Container::User }, _, _>(

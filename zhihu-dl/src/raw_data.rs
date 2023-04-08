@@ -103,14 +103,14 @@ pub enum Container {
     User,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Storable)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Storable)]
 #[store(format = "yaml")]
 pub struct RawDataInfo {
     pub fetch_time: DateTime<Utc>,
     pub container: Container,
 }
 
-#[derive(Debug, Clone, Storable, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Storable, Serialize, Deserialize)]
 pub struct RawData {
     #[store(path(ext = "yaml"))]
     pub info: RawDataInfo,

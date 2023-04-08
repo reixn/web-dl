@@ -3,9 +3,9 @@ use crate::{
     progress,
     raw_data::RawData,
     request::Client,
+    store,
 };
 use serde::Deserialize;
-use std::fmt::Display;
 use web_dl_base::id::HasId;
 
 pub trait Fetchable: HasId {
@@ -25,12 +25,11 @@ pub trait Item: Sized + HasId + HasContent {
     ) -> Result<(), comment::FetchError>;
 }
 
-pub trait ItemContainer<I: Item, O: Display + Copy>: HasId {
+pub trait ItemContainer<O, I: Item>: HasId + store::StoreItemContainer<O, I> {
     async fn fetch_items<'a, P: progress::ItemContainerProg>(
         client: &Client,
         prog: &P,
         id: Self::Id<'a>,
-        option: O,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error>;
     fn parse_item(raw_data: RawData) -> Result<I, serde_json::Error> {
         I::Reply::deserialize(&raw_data.data).map(|r| I::from_reply(r, raw_data))
@@ -40,7 +39,6 @@ pub trait ItemContainer<I: Item, O: Display + Copy>: HasId {
         client: &Client,
         prog: &P,
         id: Self::Id<'a>,
-        option: O,
         data: &mut I,
     ) -> Result<bool, reqwest::Error> {
         Ok(false)
@@ -48,11 +46,6 @@ pub trait ItemContainer<I: Item, O: Display + Copy>: HasId {
 }
 #[derive(Debug, Clone, Copy)]
 pub struct VoidOpt;
-impl Display for VoidOpt {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(())
-    }
-}
 
 pub mod answer;
 pub use answer::Answer;

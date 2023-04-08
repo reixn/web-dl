@@ -2,7 +2,7 @@ use crate::{
     element::{content::HasContent, Author, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
-    store::BasicStoreItem,
+    store::{self, BasicStoreItem, StoreItemContainer},
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -81,10 +81,10 @@ impl HasId for Column {
     }
 }
 impl BasicStoreItem for Column {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
         info.column.contains(id.0)
     }
-    fn add_info(&self, info: &mut crate::store::StoreObject) {
+    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
         info.column.insert(self.info.id.clone());
     }
 }
@@ -187,24 +187,57 @@ impl Display for ColumnItem {
         }
     }
 }
-impl super::ItemContainer<super::any::Any, ColumnItem> for Column {
+pub struct Regular;
+impl StoreItemContainer<Regular, super::any::Any> for Column {
+    const OPTION_NAME: &'static str = "item";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.column.get(id.0).map_or(false, |v| v.item)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.column
+            .entry(ColumnId(id.0.to_string()))
+            .or_default()
+            .item = true;
+    }
+}
+impl super::ItemContainer<Regular, super::any::Any> for Column {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
-        option: ColumnItem,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
         client
             .get_paged::<{ raw_data::Container::Column }, _, _>(
                 prog.start_fetch(),
-                format!(
-                    "https://www.zhihu.com/api/v4/columns/{}/{}",
-                    id,
-                    match option {
-                        ColumnItem::Regular => "items",
-                        ColumnItem::Pinned => "pinned-items",
-                    }
-                ),
+                format!("https://www.zhihu.com/api/v4/columns/{}/items", id,),
+            )
+            .await
+    }
+}
+
+pub struct Pinned;
+impl StoreItemContainer<Pinned, super::any::Any> for Column {
+    const OPTION_NAME: &'static str = "pinned-item";
+    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
+        info.column.get(id.0).map_or(false, |v| v.pinned_item)
+    }
+    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
+        info.column
+            .entry(ColumnId(id.0.to_owned()))
+            .or_default()
+            .pinned_item = true;
+    }
+}
+impl super::ItemContainer<Pinned, super::any::Any> for Column {
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        client
+            .get_paged::<{ raw_data::Container::Column }, _, _>(
+                prog.start_fetch(),
+                format!("https://www.zhihu.com/api/v4/columns/{}/pinned-items", id),
             )
             .await
     }

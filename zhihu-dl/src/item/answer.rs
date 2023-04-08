@@ -74,10 +74,10 @@ impl HasId for Answer {
     }
 }
 impl BasicStoreItem for Answer {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::StoreObject) -> bool {
+    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
         info.answer.contains(&id)
     }
-    fn add_info(&self, info: &mut crate::store::StoreObject) {
+    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
         info.answer.insert(self.info.id);
     }
 }

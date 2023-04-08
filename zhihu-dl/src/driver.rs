@@ -4,17 +4,12 @@ use crate::{
     progress,
     raw_data::{self, RawData, RawDataInfo},
     request::Client,
-    store::{BasicStoreItem, LinkInfo, Store, StoreError, StoreItem},
-    util::relative_path::{
-        link_to_dest, prepare_dest, prepare_dest_parent, DestPrepError, LinkError,
-    },
+    store::{BasicStoreItem, Store, StoreError, StoreItem},
+    util::relative_path::{link_to_dest, prepare_dest, DestPrepError, LinkError},
 };
 use chrono::Utc;
 use serde::Deserialize;
-use std::{
-    fmt::Display,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 use thiserror;
 use web_dl_base::{id::HasId, media, storable};
 
@@ -67,6 +62,12 @@ pub enum ItemError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContainerError {
+    #[error("failed to store container")]
+    Store(
+        #[source]
+        #[from]
+        StoreError,
+    ),
     #[error("failed to prepare destination")]
     DestPrep(
         #[source]
@@ -90,6 +91,19 @@ pub enum ContainerError {
         id: String,
         #[source]
         source: ItemError,
+    },
+    #[error("failed to link item {id} to container")]
+    LinkItem {
+        id: String,
+        #[source]
+        source: StoreError,
+    },
+    #[error("failed to link {} to {}", store_path.display(), dest.display())]
+    Link {
+        store_path: PathBuf,
+        dest: PathBuf,
+        #[source]
+        source: LinkError,
     },
 }
 
@@ -294,18 +308,15 @@ impl Driver {
         self.update_item_impl(prog, id, config).await.map(|r| r.0)
     }
 
-    async fn get_container_impl<'a, IC, I, O, P>(
+    async fn update_container_impl<'a, IC, I, O, P>(
         &mut self,
         prog: &P,
-        id: <IC as HasId>::Id<'a>,
-        option: O,
+        id: IC::Id<'_>,
         config: GetConfig,
-        canon_dest: Option<PathBuf>,
-    ) -> Result<(Vec<ContainerItem<I>>, Vec<(usize, LinkInfo)>), ContainerError>
+    ) -> Result<(Vec<ContainerItem<I>>, PathBuf), ContainerError>
     where
         I: Item + StoreItem + media::HasImage,
-        O: Display + Copy,
-        IC: ItemContainer<I, O>,
+        IC: ItemContainer<O, I>,
         P: progress::ItemContainerProg,
     {
         log::info!(
@@ -313,13 +324,12 @@ impl Driver {
             I::TYPE,
             IC::TYPE,
             id,
-            option
+            IC::OPTION_NAME
         );
-        let dat = IC::fetch_items(&self.client, prog, id, option)
+        let dat = IC::fetch_items(&self.client, prog, id)
             .await
             .map_err(ContainerError::from)?;
         let mut ret = Vec::with_capacity(dat.len());
-        let mut link_path = Vec::with_capacity(dat.len());
         {
             let mut p = prog.start_items(dat.len() as u64);
             for (idx, i) in dat.into_iter().enumerate() {
@@ -328,9 +338,6 @@ impl Driver {
                 log::trace!("api response {:#?}", i);
                 let mut item = IC::parse_item(i).map_err(ContainerError::from)?;
                 if I::in_store(item.id(), &self.store) {
-                    if let Some(li) = I::link_info(item.id(), &self.store, canon_dest.clone()) {
-                        link_path.push((idx, li));
-                    }
                     ret.push(ContainerItem {
                         processed: false,
                         value: item,
@@ -346,15 +353,14 @@ impl Driver {
                         source: e,
                     })?;
                 log::info!("add {} {} to store", I::TYPE, item.id());
-                if let Some(v) = item
-                    .save_data(&mut self.store, canon_dest.clone())
-                    .map_err(|e| ContainerError::Item {
-                        id: item.id().to_string(),
-                        source: ItemError::Store(e),
-                    })?
+                if let Some(v) =
+                    item.save_data(&mut self.store)
+                        .map_err(|e| ContainerError::Item {
+                            id: item.id().to_string(),
+                            source: ItemError::Store(e),
+                        })?
                 {
-                    log::debug!("store path: {}", v.source.display());
-                    link_path.push((idx, v));
+                    log::debug!("store path: {}", v.display());
                 }
                 self.store
                     .add_media(&item)
@@ -368,7 +374,7 @@ impl Driver {
                     item.id(),
                     IC::TYPE,
                     id,
-                    option
+                    IC::OPTION_NAME
                 );
                 ret.push(ContainerItem {
                     processed: true,
@@ -376,23 +382,53 @@ impl Driver {
                 });
             }
         }
-        Ok((ret, link_path))
+        let container = self
+            .store
+            .add_container::<IC, O, I>(id)
+            .map_err(ContainerError::from)?;
+        for i in ret.iter() {
+            container
+                .link_item(i.value.id())
+                .map_err(|e| ContainerError::LinkItem {
+                    id: i.value.id().to_string(),
+                    source: e,
+                })?;
+        }
+        let sp = container.finish();
+        Ok((ret, sp))
     }
 
     pub async fn get_container<'a, IC, I, O, P>(
         &mut self,
         prog: &P,
         id: <IC as HasId>::Id<'a>,
-        option: O,
+        config: GetConfig,
+    ) -> Result<Option<Vec<ContainerItem<I>>>, ContainerError>
+    where
+        I: Item + StoreItem + media::HasImage,
+        IC: ItemContainer<O, I>,
+        P: progress::ItemContainerProg,
+    {
+        if IC::in_store(id, &self.store.containers) {
+            Ok(None)
+        } else {
+            self.update_container_impl::<IC, I, O, _>(prog, id, config)
+                .await
+                .map(|r| Some(r.0))
+        }
+    }
+    pub async fn update_container<'a, IC, I, O, P>(
+        &mut self,
+        prog: &P,
+        id: <IC as HasId>::Id<'a>,
         config: GetConfig,
     ) -> Result<Vec<ContainerItem<I>>, ContainerError>
     where
         I: Item + StoreItem + media::HasImage,
-        O: Display + Copy,
-        IC: ItemContainer<I, O>,
+        IC: ItemContainer<O, I>,
         P: progress::ItemContainerProg,
     {
-        self.get_container_impl::<IC, I, O, P>(prog, id, option, config, None)
+        self.update_container_impl::<IC, I, O, _>(prog, id, config)
             .await
             .map(|r| r.0)
     }
@@ -400,41 +436,32 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <IC as HasId>::Id<'a>,
-        option: O,
         config: GetConfig,
         relative: bool,
         dest: Pat,
-    ) -> Result<Vec<ContainerItem<I>>, ContainerError>
+    ) -> Result<Option<Vec<ContainerItem<I>>>, ContainerError>
     where
         I: Item + StoreItem + media::HasImage,
-        O: Display + Copy,
-        IC: ItemContainer<I, O>,
+        IC: ItemContainer<O, I>,
         P: progress::ItemContainerProg,
         Pat: AsRef<Path>,
     {
-        let canon_dest = prepare_dest_parent(dest.as_ref()).map_err(ContainerError::from)?;
-        let (ret, link_path) = self
-            .get_container_impl::<IC, I, O, P>(prog, id, option, config, Some(canon_dest))
-            .await?;
-        for (idx, li) in link_path {
-            log::info!(
-                "linking {} {} ({}) to {}",
-                I::TYPE,
-                ret[idx].value.id(),
-                li.source.display(),
-                li.link.display()
-            );
-            link_to_dest(relative, li.source.as_path(), li.link.as_path()).map_err(|e| {
-                ContainerError::Item {
-                    id: ret[idx].value.id().to_string(),
-                    source: ItemError::Link {
-                        store_path: li.source,
-                        dest: li.link,
-                        source: e,
-                    },
-                }
-            })?;
-        }
+        let canon_dest = prepare_dest(dest.as_ref()).map_err(ContainerError::from)?;
+        let (ret, store_path) = if IC::in_store(id, &self.store.containers) {
+            (None, self.store.container_store_path::<IC, O, I>(id))
+        } else {
+            let (v, sp) = self
+                .update_container_impl::<IC, I, O, P>(prog, id, config)
+                .await?;
+            (Some(v), sp)
+        };
+        link_to_dest(relative, store_path.as_path(), canon_dest.as_path()).map_err(|e| {
+            ContainerError::Link {
+                store_path,
+                dest: dest.as_ref().to_path_buf(),
+                source: e,
+            }
+        })?;
         Ok(ret)
     }
 }

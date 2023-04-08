@@ -5,42 +5,74 @@ use crate::{
     store::StoreItem,
 };
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, path::PathBuf};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 use web_dl_base::{id::HasId, media::HasImage};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum AnyId<'a> {
     Answer(answer::AnswerId),
     Article(article::ArticleId),
-    Other(&'a Option<OtherItem>),
+    Other(&'a OtherItem),
 }
 impl<'a> Display for AnyId<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AnyId::Answer(a) => f.write_fmt(format_args!("answer {}", a)),
             AnyId::Article(a) => f.write_fmt(format_args!("article {}", a)),
-            AnyId::Other(Some(v)) => {
+            AnyId::Other(OtherItem { info: Some(v), .. }) => {
                 f.write_fmt(format_args!("unknown ({} {})", v.item_type, v.id))
             }
-            AnyId::Other(None) => f.write_str("unknown"),
+            AnyId::Other(OtherItem { info: None, .. }) => f.write_str("unknown"),
         }
     }
 }
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct OtherItem {
+pub struct OtherInfo {
     pub id: u64,
     #[serde(rename = "type")]
     pub item_type: String,
+}
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OtherItem {
+    pub info: Option<OtherInfo>,
+    pub raw_data: RawData,
+}
+impl PartialOrd for OtherItem {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        match self.info.cmp(&other.info) {
+            Ordering::Equal => {
+                if self.raw_data == other.raw_data {
+                    Some(Ordering::Equal)
+                } else {
+                    None
+                }
+            }
+            a => Some(a),
+        }
+    }
+}
+impl OtherItem {
+    pub(crate) fn warn(&self) {
+        match &self.info {
+            Some(it) => {
+                log::warn!("skipped unrecognized object ({} {})", it.item_type, it.id)
+            }
+            None => log::warn!("skipped unrecognized object (unknown id,type)"),
+        }
+        log::trace!("ignored unknown object: {:#?}", self.raw_data);
+    }
 }
 
 #[derive(Debug, HasImage, Serialize, Deserialize)]
 pub enum Any {
     Answer(#[has_image] answer::Answer),
     Article(#[has_image] article::Article),
-    Other {
-        item: Option<OtherItem>,
-        raw_data: RawData,
-    },
+    Other(OtherItem),
 }
 impl HasId for Any {
     const TYPE: &'static str = "any";
@@ -49,7 +81,7 @@ impl HasId for Any {
         match self {
             Any::Answer(a) => AnyId::Answer(a.info.id),
             Any::Article(a) => AnyId::Article(a.info.id),
-            Any::Other { item, .. } => AnyId::Other(item),
+            Any::Other(item) => AnyId::Other(item),
         }
     }
 }
@@ -78,21 +110,16 @@ impl StoreItem for Any {
             AnyId::Other(_) => false,
         }
     }
-    fn link_info(
+    fn link_info<P: AsRef<Path>>(
         id: Self::Id<'_>,
         store: &crate::store::Store,
-        dest: Option<PathBuf>,
+        dest: P,
     ) -> Option<crate::store::LinkInfo> {
         match id {
             AnyId::Answer(a) => answer::Answer::link_info(a, store, dest),
             AnyId::Article(a) => article::Article::link_info(a, store, dest),
             AnyId::Other(i) => {
-                match i {
-                    Some(it) => {
-                        log::warn!("skipped unrecognized object ({} {})", it.item_type, it.id)
-                    }
-                    None => log::warn!("skipped unrecognized object (unknown id,type)"),
-                }
+                i.warn();
                 None
             }
         }
@@ -100,23 +127,26 @@ impl StoreItem for Any {
     fn save_data(
         &self,
         store: &mut crate::store::Store,
-        dest: Option<PathBuf>,
+    ) -> Result<Option<PathBuf>, web_dl_base::storable::Error> {
+        match self {
+            Any::Answer(a) => a.save_data(store),
+            Any::Article(a) => a.save_data(store),
+            Any::Other(o) => {
+                o.warn();
+                Ok(None)
+            }
+        }
+    }
+    fn save_data_link<P: AsRef<Path>>(
+        &self,
+        store: &mut crate::store::Store,
+        dest: P,
     ) -> Result<Option<crate::store::LinkInfo>, web_dl_base::storable::Error> {
         match self {
-            Any::Answer(a) => a.save_data(store, dest),
-            Any::Article(a) => a.save_data(store, dest),
-            Any::Other { item, raw_data } => {
-                match item {
-                    Some(it) => {
-                        log::warn!(
-                            "skipped storing unrecognized object ({} {})",
-                            it.item_type,
-                            it.id
-                        )
-                    }
-                    None => log::warn!("skipped storing unrecognized object (unknown id,type)"),
-                }
-                log::trace!("ignored object raw data: {:#?}", raw_data);
+            Any::Answer(a) => a.save_data_link(store, dest),
+            Any::Article(a) => a.save_data_link(store, dest),
+            Any::Other(o) => {
+                o.warn();
                 Ok(None)
             }
         }
@@ -139,10 +169,10 @@ impl super::Item for Any {
         match reply {
             Reply::Answer(a) => Any::Answer(answer::Answer::from_reply(a, raw_data)),
             Reply::Article(a) => Any::Article(article::Article::from_reply(a, raw_data)),
-            Reply::Other => Any::Other {
-                item: OtherItem::deserialize(&raw_data.data).ok(),
+            Reply::Other => Any::Other(OtherItem {
+                info: OtherInfo::deserialize(&raw_data.data).ok(),
                 raw_data,
-            },
+            }),
         }
     }
     async fn get_comments<P: crate::progress::ItemProg>(
