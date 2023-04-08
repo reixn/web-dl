@@ -8,7 +8,7 @@ use crate::{
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr};
+use std::{collections::BTreeSet, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
     media::HasImage,
@@ -163,11 +163,15 @@ impl super::Item for Question {
 mod param;
 impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for Question {
     const OPTION_NAME: &'static str = "answer";
+    type ItemList = BTreeSet<super::answer::AnswerId>;
     fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
         info.question.contains(&id)
     }
     fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
         info.question.insert(id);
+    }
+    fn add_item(id: <super::answer::Answer as HasId>::Id<'_>, list: &mut Self::ItemList) {
+        list.insert(id);
     }
 }
 impl super::ItemContainer<super::VoidOpt, super::answer::Answer> for Question {

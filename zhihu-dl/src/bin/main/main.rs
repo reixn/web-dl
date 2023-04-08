@@ -9,6 +9,7 @@ use termcolor::{BufferedStandardStream, Color};
 use zhihu_dl::{
     driver::Driver,
     progress::{progress_bar::ProgressReporter, Reporter},
+    store,
 };
 
 mod container;
@@ -34,6 +35,8 @@ enum Command {
     Command {
         file: String,
     },
+    /// migrate store
+    Migrate,
     /// save store state
     Save,
     Exit {
@@ -116,6 +119,7 @@ impl Command {
                     ),
                 )
             }
+            Self::Migrate => anyhow::bail!("migrate is not supported in repl or file"),
             Self::Exit { force } => {
                 if driver.store.is_dirty() {
                     match save_state(driver, output) {
@@ -183,6 +187,11 @@ fn run_cli(
     output: &mut Output,
     cli: Cli,
 ) -> Result<(), anyhow::Error> {
+    if let Some(Command::Migrate) = cli.command {
+        store::Store::migrate(cli.store_path).context("failed to migrate store")?;
+        output.write_tagged(Color::Green, "Success", format_args_nl!("migrated store"));
+        return Ok(());
+    }
     let runtime = tokio::runtime::Runtime::new().context("failed to create runtime")?;
     let mut driver = {
         let p = PathBuf::from(cli.store_path.as_str());

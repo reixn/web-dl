@@ -13,6 +13,8 @@ use web_dl_base::{
     storable::Storable,
 };
 
+use super::any;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct CollectionId(pub u64);
 impl Display for CollectionId {
@@ -157,11 +159,15 @@ impl super::Item for Collection {
 
 impl StoreItemContainer<super::VoidOpt, super::any::Any> for Collection {
     const OPTION_NAME: &'static str = "item";
+    type ItemList = any::AnyList;
     fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
         info.collection.contains(&id)
     }
     fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
         info.collection.insert(id);
+    }
+    fn add_item(id: <super::any::Any as HasId>::Id<'_>, list: &mut Self::ItemList) {
+        list.insert(id)
     }
 }
 impl super::ItemContainer<super::VoidOpt, super::any::Any> for Collection {
@@ -178,10 +184,7 @@ impl super::ItemContainer<super::VoidOpt, super::any::Any> for Collection {
             .await
     }
     fn parse_item(raw_data: RawData) -> Result<super::any::Any, serde_json::Error> {
-        use super::{
-            any::{self, Any},
-            Item,
-        };
+        use super::{any::Any, Item};
         #[derive(Deserialize)]
         struct Reply {
             content: any::Reply,

@@ -6,6 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeSet,
     fmt::Display,
     path::{Path, PathBuf},
 };
@@ -195,6 +196,25 @@ impl super::Item for Any {
             Any::Answer(a) => a.get_images(client, prog).await,
             Any::Article(a) => a.get_images(client, prog).await,
             Any::Other { .. } => false,
+        }
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct AnyList {
+    pub answer: BTreeSet<answer::AnswerId>,
+    pub article: BTreeSet<article::ArticleId>,
+}
+impl AnyList {
+    pub fn insert(&mut self, id: AnyId) {
+        match id {
+            AnyId::Answer(a) => {
+                self.answer.insert(a);
+            }
+            AnyId::Article(a) => {
+                self.article.insert(a);
+            }
+            AnyId::Other { .. } => (),
         }
     }
 }

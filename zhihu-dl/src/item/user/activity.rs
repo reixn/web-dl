@@ -16,6 +16,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeSet,
     fmt::Display,
     path::{Path, PathBuf},
 };
@@ -254,13 +255,46 @@ impl Item for Activity {
     }
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct ActivityList {
+    pub answer: BTreeSet<answer::AnswerId>,
+    pub article: BTreeSet<article::ArticleId>,
+    pub column: BTreeSet<column::ColumnId>,
+    pub collection: BTreeSet<collection::CollectionId>,
+    pub pin: BTreeSet<pin::PinId>,
+    pub question: BTreeSet<question::QuestionId>,
+}
 impl StoreItemContainer<VoidOpt, Activity> for super::User {
     const OPTION_NAME: &'static str = "item";
+    type ItemList = ActivityList;
     fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
         info.user.get(&id.0).map_or(false, |v| v.activity)
     }
     fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
         info.user.entry(id.0).or_default().activity = true;
+    }
+    fn add_item(id: <Activity as HasId>::Id<'_>, list: &mut Self::ItemList) {
+        match id.target {
+            ActTargetId::Answer(a) => {
+                list.answer.insert(a);
+            }
+            ActTargetId::Article(a) => {
+                list.article.insert(a);
+            }
+            ActTargetId::Collection(c) => {
+                list.collection.insert(c);
+            }
+            ActTargetId::Column(c) => {
+                list.column.insert(column::ColumnId(c.0.to_owned()));
+            }
+            ActTargetId::Pin(p) => {
+                list.pin.insert(p);
+            }
+            ActTargetId::Question(q) => {
+                list.question.insert(q);
+            }
+            ActTargetId::Other(_) => (),
+        }
     }
 }
 impl ItemContainer<VoidOpt, Activity> for super::User {

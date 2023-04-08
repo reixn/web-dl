@@ -1,3 +1,4 @@
+use super::any;
 use crate::{
     element::{content::HasContent, Author, Content},
     meta::Version,
@@ -190,6 +191,7 @@ impl Display for ColumnItem {
 pub struct Regular;
 impl StoreItemContainer<Regular, super::any::Any> for Column {
     const OPTION_NAME: &'static str = "item";
+    type ItemList = any::AnyList;
     fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
         info.column.get(id.0).map_or(false, |v| v.item)
     }
@@ -198,6 +200,9 @@ impl StoreItemContainer<Regular, super::any::Any> for Column {
             .entry(ColumnId(id.0.to_string()))
             .or_default()
             .item = true;
+    }
+    fn add_item(id: <super::any::Any as HasId>::Id<'_>, list: &mut Self::ItemList) {
+        list.insert(id)
     }
 }
 impl super::ItemContainer<Regular, super::any::Any> for Column {
@@ -218,6 +223,7 @@ impl super::ItemContainer<Regular, super::any::Any> for Column {
 pub struct Pinned;
 impl StoreItemContainer<Pinned, super::any::Any> for Column {
     const OPTION_NAME: &'static str = "pinned-item";
+    type ItemList = any::AnyList;
     fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
         info.column.get(id.0).map_or(false, |v| v.pinned_item)
     }
@@ -226,6 +232,9 @@ impl StoreItemContainer<Pinned, super::any::Any> for Column {
             .entry(ColumnId(id.0.to_owned()))
             .or_default()
             .pinned_item = true;
+    }
+    fn add_item(id: <super::any::Any as HasId>::Id<'_>, list: &mut Self::ItemList) {
+        list.insert(id)
     }
 }
 impl super::ItemContainer<Pinned, super::any::Any> for Column {

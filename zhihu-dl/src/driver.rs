@@ -407,7 +407,7 @@ impl Driver {
                 });
             }
         }
-        let container = self
+        let mut container = self
             .store
             .add_container::<IC, O, I>(id)
             .map_err(ContainerError::from)?;
@@ -419,7 +419,7 @@ impl Driver {
                     source: e,
                 })?;
         }
-        let sp = container.finish();
+        let sp = container.finish().map_err(ContainerError::Store)?;
         Ok((ret, sp))
     }
 
