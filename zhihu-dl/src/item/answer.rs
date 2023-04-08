@@ -58,15 +58,17 @@ pub struct AnswerInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasContent, HasImage, Serialize, Deserialize)]
 pub struct Answer {
     #[store(path(ext = "yaml"))]
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: AnswerInfo,
     #[has_image]
+    #[content(main)]
     pub content: Content,
     #[has_image]
+    #[content]
     pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -121,15 +123,6 @@ impl super::Fetchable for Answer {
             .await?
             .json()
             .await
-    }
-}
-impl HasContent for Answer {
-    fn convert_html(&mut self) {
-        self.content.convert_html();
-        self.comments.convert_html();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.content)
     }
 }
 impl HasComment for Answer {

@@ -54,7 +54,7 @@ pub struct ArticleInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasContent, HasImage, Serialize, Deserialize)]
 pub struct Article {
     #[store(path(ext = "yaml"))]
     pub version: Version,
@@ -62,8 +62,10 @@ pub struct Article {
     #[store(path(ext = "yaml"))]
     pub info: ArticleInfo,
     #[has_image]
+    #[content(main)]
     pub content: Content,
     #[has_image]
+    #[content]
     pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -140,15 +142,6 @@ impl super::Fetchable for Article {
         id: ArticleId,
     ) -> Result<serde_json::Value, reqwest::Error> {
         Self::send_request(client, id).await?.json().await
-    }
-}
-impl HasContent for Article {
-    fn convert_html(&mut self) {
-        self.content.convert_html();
-        self.comments.convert_html();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.content)
     }
 }
 impl HasComment for Article {

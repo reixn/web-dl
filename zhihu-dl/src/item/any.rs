@@ -69,10 +69,18 @@ impl OtherItem {
     }
 }
 
-#[derive(Debug, HasImage, Serialize, Deserialize)]
+#[derive(Debug, HasImage, HasContent, Serialize, Deserialize)]
 pub enum Any {
-    Answer(#[has_image] answer::Answer),
-    Article(#[has_image] article::Article),
+    Answer(
+        #[has_image]
+        #[content(main)]
+        answer::Answer,
+    ),
+    Article(
+        #[has_image]
+        #[content(main)]
+        article::Article,
+    ),
     Other(OtherItem),
 }
 impl HasId for Any {
@@ -83,22 +91,6 @@ impl HasId for Any {
             Any::Answer(a) => AnyId::Answer(a.info.id),
             Any::Article(a) => AnyId::Article(a.info.id),
             Any::Other(item) => AnyId::Other(item),
-        }
-    }
-}
-impl HasContent for Any {
-    fn convert_html(&mut self) {
-        match self {
-            Any::Answer(a) => a.convert_html(),
-            Any::Article(a) => a.convert_html(),
-            Any::Other { .. } => (),
-        }
-    }
-    fn get_main_content(&self) -> Option<&'_ crate::element::Content> {
-        match self {
-            Any::Answer(a) => a.get_main_content(),
-            Any::Article(a) => a.get_main_content(),
-            Any::Other { .. } => None,
         }
     }
 }

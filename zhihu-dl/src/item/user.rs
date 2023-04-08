@@ -32,7 +32,7 @@ pub struct UserInfo {
     pub cover: Option<Image>,
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
 pub struct User {
     #[store(path(ext = "yaml"))]
     pub version: Version,
@@ -40,6 +40,7 @@ pub struct User {
     #[store(path(ext = "yaml"))]
     pub info: UserInfo,
     #[has_image]
+    #[content(main)]
     pub description: Content,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -82,14 +83,6 @@ impl super::Fetchable for User {
             .await?
             .json()
             .await
-    }
-}
-impl HasContent for User {
-    fn convert_html(&mut self) {
-        self.description.convert_inline();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.description)
     }
 }
 impl HasComment for User {

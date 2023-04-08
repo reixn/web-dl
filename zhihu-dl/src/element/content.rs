@@ -194,12 +194,17 @@ impl Display for SelectorError {
 impl std::error::Error for SelectorError {}
 
 pub trait HasContent {
+    fn is_html_converted(&self) -> bool;
     fn convert_html(&mut self);
 
     fn get_main_content(&self) -> Option<&'_ Content>;
 }
+pub use zhihu_dl_derive::HasContent;
 
 impl HasContent for Content {
+    fn is_html_converted(&self) -> bool {
+        self.document.is_some()
+    }
     fn convert_html(&mut self) {
         self.document = self
             .raw_html
@@ -212,6 +217,9 @@ impl HasContent for Content {
 }
 
 impl<'a, I: HasContent> HasContent for Vec<I> {
+    fn is_html_converted(&self) -> bool {
+        self.iter().all(I::is_html_converted)
+    }
     fn convert_html(&mut self) {
         for i in self {
             i.convert_html()
@@ -222,6 +230,9 @@ impl<'a, I: HasContent> HasContent for Vec<I> {
     }
 }
 impl<I: HasContent> HasContent for Option<I> {
+    fn is_html_converted(&self) -> bool {
+        self.as_ref().map_or(true, I::is_html_converted)
+    }
     fn convert_html(&mut self) {
         if let Some(v) = self {
             v.convert_html()

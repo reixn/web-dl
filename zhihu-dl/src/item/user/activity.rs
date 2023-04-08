@@ -60,14 +60,38 @@ impl<'a> Display for ActivityId<'a> {
     }
 }
 
-#[derive(Debug, HasImage, Serialize, Deserialize)]
+#[derive(Debug, HasImage, HasContent, Serialize, Deserialize)]
 pub enum ActTarget {
-    Answer(#[has_image] Answer),
-    Article(#[has_image] Article),
-    Collection(#[has_image] Collection),
-    Column(#[has_image] Column),
-    Pin(#[has_image] Pin),
-    Question(#[has_image] Question),
+    Answer(
+        #[has_image]
+        #[content(main)]
+        Answer,
+    ),
+    Article(
+        #[has_image]
+        #[content(main)]
+        Article,
+    ),
+    Collection(
+        #[has_image]
+        #[content(main)]
+        Collection,
+    ),
+    Column(
+        #[has_image]
+        #[content(main)]
+        Column,
+    ),
+    Pin(
+        #[has_image]
+        #[content(main)]
+        Pin,
+    ),
+    Question(
+        #[has_image]
+        #[content(main)]
+        Question,
+    ),
     Other(OtherItem),
 }
 
@@ -95,10 +119,11 @@ pub struct Reply {
     target: TargetReply,
 }
 
-#[derive(Debug, HasImage, Serialize, Deserialize)]
+#[derive(Debug, HasImage, HasContent, Serialize, Deserialize)]
 pub struct Activity {
     pub id: u64,
     #[has_image(error = "pass_through")]
+    #[content(main)]
     pub target: ActTarget,
 }
 
@@ -111,30 +136,6 @@ impl HasId for Activity {
                 match &self.target {
                     $(ActTarget::$t(t) => ActivityId { id: self.id, target: ActTargetId::$t(t.id()) },)+
                     ActTarget::Other(item) => ActivityId {id: self.id, target: ActTargetId::Other(item)}
-                }
-            };
-        }
-        target!(Answer, Article, Collection, Column, Pin, Question)
-    }
-}
-impl HasContent for Activity {
-    fn convert_html(&mut self) {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &mut self.target {
-                    $(ActTarget::$t(t) => t.convert_html(),)+
-                    ActTarget::Other {..} => ()
-                }
-            };
-        }
-        target!(Answer, Article, Collection, Column, Pin, Question)
-    }
-    fn get_main_content(&self) -> Option<&'_ crate::element::Content> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &self.target {
-                    $(ActTarget::$t(t) => t.get_main_content(),)+
-                    ActTarget::Other {..} => None
                 }
             };
         }

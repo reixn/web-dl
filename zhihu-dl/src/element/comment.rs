@@ -1,5 +1,8 @@
 use crate::{
-    element::{author::Author, content::Content},
+    element::{
+        author::Author,
+        content::{Content, HasContent},
+    },
     meta::Version,
     progress,
     raw_data::{FromRaw, RawData, StrU64},
@@ -39,13 +42,14 @@ pub struct CommentInfo {
     pub created_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasContent, HasImage, Serialize, Deserialize)]
 pub struct Comment {
     #[store(path(ext = "yaml"))]
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: CommentInfo,
     #[has_image]
+    #[content(main)]
     pub content: Content,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -53,20 +57,11 @@ pub struct Comment {
 pub mod fetch;
 pub use fetch::{parse_comment, Error as FetchError, RootType};
 
-use super::content::HasContent;
 impl HasId for Comment {
     const TYPE: &'static str = "comment";
     type Id<'a> = CommentId;
     fn id(&self) -> Self::Id<'_> {
         self.info.id
-    }
-}
-impl HasContent for Comment {
-    fn convert_html(&mut self) {
-        self.content.convert_inline();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.content)
     }
 }
 

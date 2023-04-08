@@ -51,15 +51,17 @@ pub struct CollectionInfo {
 }
 
 pub const VERSION: Version = Version { major: 1, minor: 1 };
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
 pub struct Collection {
     #[store(path(ext = "yaml"))]
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: CollectionInfo,
     #[has_image]
+    #[content(main)]
     pub description: Content,
     #[has_image]
+    #[content]
     pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -94,15 +96,6 @@ impl super::Fetchable for Collection {
             .await?
             .json()
             .await
-    }
-}
-impl HasContent for Collection {
-    fn convert_html(&mut self) {
-        self.description.convert_inline();
-        self.comments.convert_html();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.description)
     }
 }
 impl HasComment for Collection {

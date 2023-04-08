@@ -2659,4 +2659,15 @@ dependencies = [
  "url",
  "web_dl_base",
  "yansi",
+ "zhihu-dl-derive",
+]
+
+[[package]]
+name = "zhihu-dl-derive"
+version = "0.1.0"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]

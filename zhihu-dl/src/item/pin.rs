@@ -37,20 +37,13 @@ impl OwnedId<Pin> for PinId {
 }
 
 pub const CONTENT_VERSION: Version = Version { major: 1, minor: 0 };
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
 pub struct PinContent {
     #[store(path(ext = "yaml"))]
     pub version: Version,
     #[has_image]
+    #[content(main)]
     pub content_html: Content,
-}
-impl HasContent for PinContent {
-    fn convert_html(&mut self) {
-        self.content_html.convert_html();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.content_html)
-    }
 }
 
 #[derive(Debug, Storable, Serialize, Deserialize)]
@@ -65,34 +58,30 @@ pub struct PinInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
 pub struct PinBody {
     #[store(path(ext = "yaml"))]
     pub info: PinInfo,
     #[has_image(error = "pass_through")]
+    #[content(main)]
     pub content: PinContent,
-}
-impl HasContent for PinBody {
-    fn convert_html(&mut self) {
-        self.content.convert_html();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        self.content.get_main_content()
-    }
 }
 
 pub const VERSION: Version = Version { major: 1, minor: 1 };
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasContent, HasImage, Serialize, Deserialize)]
 pub struct Pin {
     #[store(path(ext = "yaml"))]
     pub version: Version,
     #[has_image]
+    #[content(main)]
     #[store(path = "flatten")]
     pub body: PinBody,
     #[has_image]
+    #[content]
     pub repin: Option<PinBody>,
     #[has_image]
+    #[content]
     pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -125,16 +114,6 @@ impl super::Fetchable for Pin {
             .await?
             .json()
             .await
-    }
-}
-impl HasContent for Pin {
-    fn convert_html(&mut self) {
-        self.body.convert_html();
-        self.repin.convert_html();
-        self.comments.convert_html();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.body.content.content_html)
     }
 }
 impl HasComment for Pin {

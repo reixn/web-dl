@@ -52,15 +52,17 @@ pub struct QuestionInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
 pub struct Question {
     #[store(path(ext = "yaml"))]
     pub version: Version,
     #[store(path(ext = "yaml"))]
     pub info: QuestionInfo,
     #[has_image]
+    #[content(main)]
     pub content: Content,
     #[has_image]
+    #[content]
     pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -78,15 +80,6 @@ impl BasicStoreItem for Question {
     }
     fn add_info(&self, info: &mut crate::store::ObjectInfo) {
         info.question.insert(self.info.id);
-    }
-}
-impl HasContent for Question {
-    fn convert_html(&mut self) {
-        self.content.convert_html();
-        self.comments.convert_html();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.content)
     }
 }
 impl HasComment for Question {

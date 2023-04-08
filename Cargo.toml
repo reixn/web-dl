@@ -1,2 +1,2 @@
 [workspace]
-members = [ "web-dl-base", "web-dl-derive", "zhihu-dl" ]
+members = ["web-dl-base", "web-dl-derive", "zhihu-dl-derive", "zhihu-dl"]

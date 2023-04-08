@@ -51,7 +51,7 @@ pub struct ColumnInfo {
 }
 
 const VERSION: Version = Version { major: 1, minor: 0 };
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
 pub struct Column {
     #[store(path(ext = "yaml"))]
     pub version: Version,
@@ -59,8 +59,10 @@ pub struct Column {
     #[store(path(ext = "yaml"))]
     pub info: ColumnInfo,
     #[has_image]
+    #[content]
     pub intro: Content,
     #[has_image]
+    #[content(main)]
     pub description: Content,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
@@ -103,15 +105,6 @@ impl super::Fetchable for Column {
             .await?
             .json()
             .await
-    }
-}
-impl HasContent for Column {
-    fn convert_html(&mut self) {
-        self.intro.convert_inline();
-        self.description.convert_inline();
-    }
-    fn get_main_content(&self) -> Option<&'_ Content> {
-        Some(&self.description)
     }
 }
 impl HasComment for Column {
