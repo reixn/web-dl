@@ -20,6 +20,7 @@ use types::*;
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// init client
     Init,
     Item {
         #[command(subcommand)]
@@ -29,6 +30,7 @@ enum Command {
         #[command(subcommand)]
         cmd: ContainerCmd,
     },
+    /// save store state
     Save,
     Exit {
         #[arg(short, long)]
@@ -111,6 +113,9 @@ struct Cli {
     store_path: String,
     #[arg(long, short)]
     verbosity: Option<Verbosity>,
+    #[arg(long)]
+    /// don't init client on start
+    no_init: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -158,9 +163,11 @@ async fn run_cli(
             d
         }
     };
+    if !cli.no_init {
+        init_driver(&mut driver, output).await?;
+    }
 
     if let Some(v) = cli.command {
-        init_driver(&mut driver, output).await?;
         v.run(&mut driver, output, reporter).await?;
         return save_state(&mut driver, output);
     }
