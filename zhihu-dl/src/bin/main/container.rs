@@ -1,6 +1,7 @@
 use super::types::*;
 use anyhow::Context;
 use clap::{Args, Subcommand};
+use indicatif::HumanDuration;
 use termcolor::Color;
 use web_dl_base::{id::OwnedId, media};
 use zhihu_dl::{
@@ -101,6 +102,7 @@ impl<Id: Args> ContainerOper<Id> {
                 oper_opt = opt
             ),
         );
+        let st = std::time::SystemTime::now();
         let v = match self {
             Self::Get { id, get_opt } => {
                 let id = id.to_id();
@@ -155,7 +157,7 @@ impl<Id: Args> ContainerOper<Id> {
             Color::Green,
             ok_tag,
             format_args_nl!(
-                "{num}{item} ({opt}) in {container} {con_id} {oper_opt}",
+                "{num}{item} ({opt}) in {container} {con_id} {oper_opt} took {time}",
                 num = match v {
                     Some(v) => format!("{} ", v.len()),
                     None => String::new(),
@@ -164,7 +166,8 @@ impl<Id: Args> ContainerOper<Id> {
                 opt = IC::OPTION_NAME,
                 container = IC::TYPE,
                 con_id = con_id,
-                oper_opt = opt
+                oper_opt = opt,
+                time = HumanDuration(std::time::SystemTime::now().duration_since(st).unwrap())
             ),
         );
         Ok(())

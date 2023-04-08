@@ -3,7 +3,8 @@
 
 use anyhow::Context;
 use clap::{FromArgMatches, Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
+use indicatif::HumanDuration;
+use std::{fs, path::PathBuf};
 use termcolor::{BufferedStandardStream, Color};
 use zhihu_dl::{
     driver::Driver,
@@ -30,6 +31,9 @@ enum Command {
         #[command(subcommand)]
         cmd: ContainerCmd,
     },
+    Command {
+        file: String,
+    },
     /// save store state
     Save,
     Exit {
@@ -44,28 +48,74 @@ fn save_state(driver: &mut Driver, output: &mut Output) -> Result<(), anyhow::Er
     Ok(())
 }
 async fn init_driver(driver: &mut Driver, output: &mut Output) -> Result<(), anyhow::Error> {
+    let st = std::time::SystemTime::now();
     output.write_tagged(
         Color::Cyan,
         "Initializing",
         format_args_nl!("initializing driver"),
     );
     driver.init().await.context("failed to init driver")?;
-    output.write_tagged(Color::Blue, "Ready", format_args_nl!("Initialized driver"));
+    output.write_tagged(
+        Color::Blue,
+        "Ready",
+        format_args_nl!(
+            "Initialized driver took {}",
+            HumanDuration(std::time::SystemTime::now().duration_since(st).unwrap())
+        ),
+    );
     Ok(())
 }
 impl Command {
-    async fn run(
+    fn parse_line(line: Vec<String>) -> clap::error::Result<Self> {
+        Self::augment_subcommands(clap::Command::new("repl").multicall(true))
+            .subcommand_required(true)
+            .try_get_matches_from(line.into_iter())
+            .and_then(|am| Self::from_arg_matches(&am))
+    }
+    fn run(
         self,
+        runtime: &tokio::runtime::Runtime,
         driver: &mut Driver,
         output: &mut Output,
         prog: &ProgressReporter,
     ) -> Result<bool, anyhow::Error> {
-        let st = std::time::SystemTime::now();
         match self {
-            Self::Init => init_driver(driver, output).await?,
-            Self::Item { cmd } => cmd.run(driver, output, prog).await?,
-            Self::Container { cmd } => cmd.run(driver, output, prog).await?,
+            Self::Init => runtime.block_on(init_driver(driver, output))?,
+            Self::Item { cmd } => runtime.block_on(cmd.run(driver, output, prog))?,
+            Self::Container { cmd } => runtime.block_on(cmd.run(driver, output, prog))?,
             Self::Save => save_state(driver, output)?,
+            Self::Command { file } => {
+                output.write_tagged(
+                    Color::Cyan,
+                    "Running",
+                    format_args_nl!("commands in {}", file),
+                );
+                let st = std::time::SystemTime::now();
+                for (idx, s) in fs::read_to_string(&file)
+                    .with_context(|| format!("failed to read {}", file))?
+                    .lines()
+                    .enumerate()
+                {
+                    if s.trim().is_empty() {
+                        continue;
+                    }
+                    Self::parse_line(
+                        shlex::split(s)
+                            .with_context(|| format!("{}:{}: erroneous quoting", file, idx + 1))?,
+                    )
+                    .with_context(|| format!("{}:{}: failed to parse command", file, idx + 1))?
+                    .run(runtime, driver, output, prog)?;
+                }
+                output.write_tagged(
+                    Color::Green,
+                    "Completed",
+                    format_args_nl!(
+                        "running commands in {} took {}",
+                        file,
+                        HumanDuration(std::time::SystemTime::now().duration_since(st).unwrap())
+                    ),
+                )
+            }
             Self::Exit { force } => {
                 if driver.store.is_dirty() {
                     match save_state(driver, output) {
@@ -84,14 +134,6 @@ impl Command {
                 }
             }
         }
-        output.write_tagged(
-            Color::Green,
-            "Finished",
-            format_args_nl!(
-                "Command finished after {}",
-                indicatif::HumanDuration(std::time::SystemTime::now().duration_since(st).unwrap())
-            ),
-        );
         Ok(false)
     }
 }
@@ -136,11 +178,12 @@ impl<D: slog::Drain> slog::Drain for LogDrain<D> {
     }
 }
 
-async fn run_cli(
+fn run_cli(
     reporter: &ProgressReporter,
     output: &mut Output,
     cli: Cli,
 ) -> Result<(), anyhow::Error> {
+    let runtime = tokio::runtime::Runtime::new().context("failed to create runtime")?;
     let mut driver = {
         let p = PathBuf::from(cli.store_path.as_str());
         if p.exists() {
@@ -164,11 +207,11 @@ async fn run_cli(
         }
     };
     if !cli.no_init {
-        init_driver(&mut driver, output).await?;
+        runtime.block_on(init_driver(&mut driver, output))?;
     }
 
     if let Some(v) = cli.command {
-        v.run(&mut driver, output, reporter).await?;
+        v.run(&runtime, &mut driver, output, reporter)?;
         return save_state(&mut driver, output);
     }
     let mut editor = rustyline::Editor::<(), _>::with_history(
@@ -192,12 +235,8 @@ async fn run_cli(
                 continue;
             }
         };
-        match Command::augment_subcommands(clap::Command::new("repl").multicall(true))
-            .subcommand_required(true)
-            .try_get_matches_from(input.into_iter())
-            .and_then(|am| Command::from_arg_matches(&am))
-        {
-            Ok(cmd) => match cmd.run(&mut driver, output, reporter).await {
+        match Command::parse_line(input) {
+            Ok(cmd) => match cmd.run(&runtime, &mut driver, output, reporter) {
                 Ok(true) => break,
                 Ok(false) => (),
                 Err(e) => {
@@ -262,10 +301,7 @@ fn main() {
         buffer: BufferedStandardStream::stdout(termcolor::ColorChoice::Auto),
     };
 
-    if let Err(e) = tokio::runtime::Runtime::new()
-        .context("failed to create context")
-        .and_then(|rt| rt.block_on(run_cli(&reporter, &mut output, cmd)))
-    {
+    if let Err(e) = run_cli(&reporter, &mut output, cmd) {
         output.write_error(e);
     }
 }

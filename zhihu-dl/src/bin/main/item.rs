@@ -1,6 +1,7 @@
 use super::types::*;
 use anyhow::Context;
 use clap::{Args, Subcommand};
+use indicatif::HumanDuration;
 use rustyline::hint::Hint;
 use std::path::PathBuf;
 use termcolor::Color;
@@ -187,6 +188,7 @@ impl<Id: Args> ItemOper<Id> {
                 opt = opt
             ),
         );
+        let st = std::time::SystemTime::now();
         let id = match self {
             ItemOper::Get { id, get_opt } => {
                 let id = id.to_id();
@@ -292,11 +294,12 @@ impl<Id: Args> ItemOper<Id> {
             Color::Green,
             ok_tag,
             format_args_nl!(
-                "{pre}{item} {id} {opt}",
+                "{pre}{item} {id} {opt} took {time}",
                 pre = pre,
                 item = I::TYPE,
                 id = id,
-                opt = opt
+                opt = opt,
+                time = HumanDuration(std::time::SystemTime::now().duration_since(st).unwrap())
             ),
         );
         Ok(())
