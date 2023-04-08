@@ -1,5 +1,5 @@
 use crate::{
-    element::content::HasContent,
+    element::{comment::HasComment, content::HasContent},
     item::{
         answer::{self, Answer},
         any::{OtherInfo, OtherItem},
@@ -141,6 +141,45 @@ impl HasContent for Activity {
         target!(Answer, Article, Collection, Column, Pin, Question)
     }
 }
+impl HasComment for Activity {
+    fn has_comment(&self) -> bool {
+        macro_rules! target {
+            ($($t:ident),+) => {
+                match &self.target {
+                    $(ActTarget::$t(t) => t.has_comment(),)+
+                    ActTarget::Other {..} => false
+                }
+            };
+        }
+        target!(Answer, Article, Collection, Column, Pin, Question)
+    }
+    fn is_comment_fetched(&self) -> bool {
+        macro_rules! target {
+            ($($t:ident),+) => {
+                match &self.target {
+                    $(ActTarget::$t(t) => t.is_comment_fetched(),)+
+                    ActTarget::Other {..} => true
+                }
+            };
+        }
+        target!(Answer, Article, Collection, Column, Pin, Question)
+    }
+    async fn get_comments<P: crate::progress::CommentTreeProg>(
+        &mut self,
+        prog: P,
+        client: &crate::request::Client,
+    ) -> Result<(), crate::element::comment::fetch::Error> {
+        macro_rules! target {
+                ($($t:ident),+) => {
+                    match &mut self.target {
+                        $(ActTarget::$t(t) => t.get_comments(prog, client).await,)+
+                        ActTarget::Other { .. } => Ok(())
+                    }
+                };
+            }
+        target!(Answer, Article, Collection, Column, Pin, Question)
+    }
+}
 impl StoreItem for Activity {
     fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
         macro_rules! target {
@@ -222,21 +261,6 @@ impl Item for Activity {
             id: reply.id.0,
             target: target!(Answer, Article, Collection, Column, Question, Pin),
         }
-    }
-    async fn get_comments<P: crate::progress::ItemProg>(
-        &mut self,
-        client: &crate::request::Client,
-        prog: &P,
-    ) -> Result<(), crate::element::comment::FetchError> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &mut self.target {
-                    $(ActTarget::$t(t) => t.get_comments(client, prog).await,)+
-                    ActTarget::Other { .. } => Ok(())
-                }
-            };
-        }
-        target!(Answer, Article, Collection, Column, Pin, Question)
     }
     async fn get_images<P: crate::progress::ItemProg>(
         &mut self,

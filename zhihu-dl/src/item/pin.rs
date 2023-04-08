@@ -1,5 +1,9 @@
 use crate::{
-    element::{comment, content::HasContent, Author, Comment, Content},
+    element::{
+        comment::{self, HasComment},
+        content::HasContent,
+        Author, Comment, Content,
+    },
     meta::Version,
     raw_data::{FromRaw, RawData, StrU64},
     store::BasicStoreItem,
@@ -55,6 +59,8 @@ pub struct PinInfo {
     pub id: PinId,
     pub repin_id: Option<PinId>,
     pub author: Author,
+    #[serde(default = "comment::has_comment_default")]
+    pub has_comment: bool,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -75,7 +81,7 @@ impl HasContent for PinBody {
     }
 }
 
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 
 #[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct Pin {
@@ -87,7 +93,7 @@ pub struct Pin {
     #[has_image]
     pub repin: Option<PinBody>,
     #[has_image]
-    pub comments: Vec<Comment>,
+    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -131,6 +137,23 @@ impl HasContent for Pin {
         Some(&self.body.content.content_html)
     }
 }
+impl HasComment for Pin {
+    fn has_comment(&self) -> bool {
+        self.body.info.has_comment
+    }
+    fn is_comment_fetched(&self) -> bool {
+        self.comments.is_some()
+    }
+    async fn get_comments<P: crate::progress::CommentTreeProg>(
+        &mut self,
+        prog: P,
+        client: &crate::request::Client,
+    ) -> Result<(), comment::fetch::Error> {
+        self.comments =
+            Some(Comment::get(client, prog, comment::RootType::Pin, self.body.info.id).await?);
+        Ok(())
+    }
+}
 
 #[derive(Deserialize)]
 pub struct Reply {
@@ -138,6 +161,7 @@ pub struct Reply {
     author: FromRaw<Author>,
     created: FromRaw<DateTime<FixedOffset>>,
     updated: FromRaw<DateTime<FixedOffset>>,
+    comment_count: u64,
     content_html: FromRaw<Content>,
     #[serde(default)]
     repin: Option<Box<Reply>>,
@@ -151,6 +175,7 @@ impl super::Item for Pin {
                     id: PinId(data.id.0),
                     repin_id,
                     author: data.author.0,
+                    has_comment: data.comment_count > 0,
                     created_time: data.created.0,
                     updated_time: data.updated.0,
                 },
@@ -166,23 +191,9 @@ impl super::Item for Pin {
             version: VERSION,
             body: to_body(reply, repin.as_ref().map(|v| v.info.id)),
             repin,
-            comments: Vec::new(),
+            comments: None,
             raw_data: Some(raw_data),
         }
-    }
-    async fn get_comments<P: crate::progress::ItemProg>(
-        &mut self,
-        client: &crate::request::Client,
-        prog: &P,
-    ) -> Result<(), crate::element::comment::FetchError> {
-        self.comments = Comment::get(
-            client,
-            prog.start_comment_tree(),
-            comment::RootType::Pin,
-            self.body.info.id,
-        )
-        .await?;
-        Ok(())
     }
     async fn get_images<P: crate::progress::ItemProg>(
         &mut self,

@@ -1,5 +1,9 @@
 use crate::{
-    element::{comment, content::HasContent, Author, Comment, Content},
+    element::{
+        comment::{self, HasComment},
+        content::HasContent,
+        Author, Comment, Content,
+    },
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
@@ -15,7 +19,7 @@ use web_dl_base::{
     storable::Storable,
 };
 
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct QuestionId(pub u64);
@@ -42,6 +46,8 @@ pub struct QuestionInfo {
     pub id: QuestionId,
     pub title: String,
     pub author: Option<Author>,
+    #[serde(default = "comment::has_comment_default")]
+    pub has_comment: bool,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -55,7 +61,7 @@ pub struct Question {
     #[has_image]
     pub content: Content,
     #[has_image]
-    pub comments: Vec<Comment>,
+    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -81,6 +87,23 @@ impl HasContent for Question {
     }
     fn get_main_content(&self) -> Option<&'_ Content> {
         Some(&self.content)
+    }
+}
+impl HasComment for Question {
+    fn has_comment(&self) -> bool {
+        self.info.has_comment
+    }
+    fn is_comment_fetched(&self) -> bool {
+        self.comments.is_some()
+    }
+    async fn get_comments<P: crate::progress::CommentTreeProg>(
+        &mut self,
+        prog: P,
+        client: &crate::request::Client,
+    ) -> Result<(), comment::fetch::Error> {
+        self.comments =
+            Some(Comment::get(client, prog, comment::RootType::Question, self.info.id).await?);
+        Ok(())
     }
 }
 
@@ -113,6 +136,7 @@ pub struct Reply {
     title: String,
     author: FromRaw<Option<Author>>,
     created: FromRaw<DateTime<FixedOffset>>,
+    comment_count: u64,
     #[serde(default)]
     updated_time: FromRaw<DateTime<FixedOffset>>,
     detail: FromRaw<Content>,
@@ -126,27 +150,14 @@ impl super::Item for Question {
                 id: QuestionId(reply.id),
                 title: reply.title,
                 author: reply.author.0,
+                has_comment: reply.comment_count > 0,
                 created_time: reply.created.0,
                 updated_time: reply.updated_time.0,
             },
             content: reply.detail.0,
-            comments: Vec::new(),
+            comments: None,
             raw_data: Some(raw_data),
         }
-    }
-    async fn get_comments<P: crate::progress::ItemProg>(
-        &mut self,
-        client: &crate::request::Client,
-        prog: &P,
-    ) -> Result<(), crate::element::comment::FetchError> {
-        self.comments = Comment::get(
-            client,
-            prog.start_comment_tree(),
-            comment::RootType::Question,
-            self.info.id,
-        )
-        .await?;
-        Ok(())
     }
     async fn get_images<P: crate::progress::ItemProg>(
         &mut self,

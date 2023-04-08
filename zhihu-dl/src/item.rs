@@ -14,15 +14,10 @@ pub trait Fetchable: HasId {
         id: Self::Id<'a>,
     ) -> Result<serde_json::Value, reqwest::Error>;
 }
-pub trait Item: Sized + HasId + HasContent {
+pub trait Item: Sized + HasId + HasContent + comment::HasComment {
     type Reply: for<'de> Deserialize<'de>;
     fn from_reply(reply: Self::Reply, raw_data: RawData) -> Self;
     async fn get_images<P: progress::ItemProg>(&mut self, client: &Client, prog: &P) -> bool;
-    async fn get_comments<P: progress::ItemProg>(
-        &mut self,
-        client: &Client,
-        prog: &P,
-    ) -> Result<(), comment::FetchError>;
 }
 
 pub trait ItemContainer<O, I: Item>: HasId + store::StoreItemContainer<O, I> {

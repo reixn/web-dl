@@ -1,5 +1,5 @@
 use crate::{
-    element::content::HasContent,
+    element::{comment::HasComment, content::HasContent},
     item::{answer, article},
     raw_data::RawData,
     store::StoreItem,
@@ -102,6 +102,33 @@ impl HasContent for Any {
         }
     }
 }
+impl HasComment for Any {
+    fn has_comment(&self) -> bool {
+        match self {
+            Any::Answer(a) => a.has_comment(),
+            Any::Article(a) => a.has_comment(),
+            Any::Other(_) => false,
+        }
+    }
+    fn is_comment_fetched(&self) -> bool {
+        match self {
+            Any::Answer(a) => a.is_comment_fetched(),
+            Any::Article(a) => a.is_comment_fetched(),
+            Any::Other(_) => true,
+        }
+    }
+    async fn get_comments<P: crate::progress::CommentTreeProg>(
+        &mut self,
+        prog: P,
+        client: &crate::request::Client,
+    ) -> Result<(), crate::element::comment::fetch::Error> {
+        match self {
+            Any::Answer(a) => a.get_comments(prog, client).await,
+            Any::Article(a) => a.get_comments(prog, client).await,
+            Any::Other { .. } => Ok(()),
+        }
+    }
+}
 
 impl StoreItem for Any {
     fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
@@ -174,17 +201,6 @@ impl super::Item for Any {
                 info: OtherInfo::deserialize(&raw_data.data).ok(),
                 raw_data,
             }),
-        }
-    }
-    async fn get_comments<P: crate::progress::ItemProg>(
-        &mut self,
-        client: &crate::request::Client,
-        prog: &P,
-    ) -> Result<(), crate::element::comment::FetchError> {
-        match self {
-            Any::Answer(a) => a.get_comments(client, prog).await,
-            Any::Article(a) => a.get_comments(client, prog).await,
-            Any::Other { .. } => Ok(()),
         }
     }
     async fn get_images<P: crate::progress::ItemProg>(

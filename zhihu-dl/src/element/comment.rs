@@ -1,7 +1,9 @@
 use crate::{
     element::{author::Author, content::Content},
     meta::Version,
+    progress,
     raw_data::{FromRaw, RawData, StrU64},
+    request::Client,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -118,4 +120,18 @@ impl CommentTree {
         }
         ret
     }
+}
+
+#[inline]
+pub(crate) fn has_comment_default() -> bool {
+    true
+}
+pub trait HasComment {
+    fn has_comment(&self) -> bool;
+    fn is_comment_fetched(&self) -> bool;
+    async fn get_comments<P: progress::CommentTreeProg>(
+        &mut self,
+        prog: P,
+        client: &Client,
+    ) -> Result<(), fetch::Error>;
 }

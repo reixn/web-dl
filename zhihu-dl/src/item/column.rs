@@ -1,6 +1,6 @@
 use super::any;
 use crate::{
-    element::{content::HasContent, Author, Content},
+    element::{comment::HasComment, content::HasContent, Author, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     store::{self, BasicStoreItem, StoreItemContainer},
@@ -114,6 +114,21 @@ impl HasContent for Column {
         Some(&self.description)
     }
 }
+impl HasComment for Column {
+    fn has_comment(&self) -> bool {
+        false
+    }
+    fn is_comment_fetched(&self) -> bool {
+        true
+    }
+    async fn get_comments<P>(
+        &mut self,
+        _: P,
+        _: &crate::request::Client,
+    ) -> Result<(), crate::element::comment::fetch::Error> {
+        Ok(())
+    }
+}
 
 #[derive(Deserialize)]
 pub struct Reply {
@@ -143,13 +158,6 @@ impl super::Item for Column {
             description: reply.description.0,
             raw_data: Some(raw_data),
         }
-    }
-    async fn get_comments<P: crate::progress::ItemProg>(
-        &mut self,
-        _: &crate::request::Client,
-        _: &P,
-    ) -> Result<(), crate::element::comment::FetchError> {
-        Ok(())
     }
     async fn get_images<P: crate::progress::ItemProg>(
         &mut self,

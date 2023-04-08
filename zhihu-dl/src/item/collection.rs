@@ -1,5 +1,9 @@
 use crate::{
-    element::{comment, content::HasContent, Author, Comment, Content},
+    element::{
+        comment::{self, HasComment},
+        content::HasContent,
+        Author, Comment, Content,
+    },
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     store::{self, BasicStoreItem, StoreItemContainer},
@@ -40,11 +44,13 @@ pub struct CollectionInfo {
     pub id: CollectionId,
     pub title: String,
     pub creator: Author,
+    #[serde(default = "comment::has_comment_default")]
+    pub has_comment: bool,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
 
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 #[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
 pub struct Collection {
     #[store(path(ext = "yaml"))]
@@ -54,7 +60,7 @@ pub struct Collection {
     #[has_image]
     pub description: Content,
     #[has_image]
-    pub comments: Vec<Comment>,
+    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -99,11 +105,29 @@ impl HasContent for Collection {
         Some(&self.description)
     }
 }
+impl HasComment for Collection {
+    fn has_comment(&self) -> bool {
+        self.info.has_comment
+    }
+    fn is_comment_fetched(&self) -> bool {
+        self.comments.is_some()
+    }
+    async fn get_comments<P: crate::progress::CommentTreeProg>(
+        &mut self,
+        prog: P,
+        client: &crate::request::Client,
+    ) -> Result<(), comment::fetch::Error> {
+        self.comments =
+            Some(Comment::get(client, prog, comment::RootType::Collection, self.info.id).await?);
+        Ok(())
+    }
+}
 
 #[derive(Deserialize)]
 struct Reply {
     id: u64,
     title: String,
+    comment_count: u64,
     creator: FromRaw<Author>,
     description: FromRaw<Content>,
     created_time: FromRaw<DateTime<FixedOffset>>,
@@ -123,27 +147,14 @@ impl super::Item for Collection {
                 id: CollectionId(d.id),
                 title: d.title,
                 creator: d.creator.0,
+                has_comment: d.comment_count > 0,
                 created_time: d.created_time.0,
                 updated_time: d.updated_time.0,
             },
             description: d.description.0,
-            comments: Vec::new(),
+            comments: None,
             raw_data: Some(raw_data),
         }
-    }
-    async fn get_comments<P: crate::progress::ItemProg>(
-        &mut self,
-        client: &crate::request::Client,
-        prog: &P,
-    ) -> Result<(), crate::element::comment::FetchError> {
-        self.comments = Comment::get(
-            client,
-            prog.start_comment_tree(),
-            comment::RootType::Collection,
-            self.info.id,
-        )
-        .await?;
-        Ok(())
     }
     async fn get_images<P: crate::progress::ItemProg>(
         &mut self,

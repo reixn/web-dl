@@ -181,9 +181,9 @@ impl Driver {
         if item.get_images(&self.client, prog).await {
             prog.sleep(self.client.request_interval).await;
         }
-        if config.get_comments {
+        if config.get_comments && item.has_comment() {
             log::info!("getting comments for {} {}", I::TYPE, item.id());
-            item.get_comments(&self.client, prog)
+            item.get_comments(prog.start_comment_tree(), &self.client)
                 .await
                 .map_err(ItemError::from)?;
             prog.sleep(self.client.request_interval).await;

@@ -1,6 +1,6 @@
 use crate::{
     element::{
-        comment::{self, Comment},
+        comment::{self, Comment, HasComment},
         content::HasContent,
         Author, Content,
     },
@@ -19,7 +19,7 @@ use web_dl_base::{
     storable::Storable,
 };
 
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ArticleId(pub u64);
@@ -48,6 +48,8 @@ pub struct ArticleInfo {
     pub author: Author,
     #[has_image]
     pub cover: Option<Image>,
+    #[serde(default = "comment::has_comment_default")]
+    pub has_comment: bool,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -62,7 +64,7 @@ pub struct Article {
     #[has_image]
     pub content: Content,
     #[has_image]
-    pub comments: Vec<Comment>,
+    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -125,6 +127,7 @@ pub struct Reply {
     id: u64,
     title: String,
     author: FromRaw<Author>,
+    comment_count: u64,
     #[serde(default)]
     title_image: FromRaw<Option<Image>>,
     created: FromRaw<DateTime<FixedOffset>>,
@@ -148,6 +151,23 @@ impl HasContent for Article {
         Some(&self.content)
     }
 }
+impl HasComment for Article {
+    fn has_comment(&self) -> bool {
+        self.info.has_comment
+    }
+    fn is_comment_fetched(&self) -> bool {
+        self.comments.is_some()
+    }
+    async fn get_comments<P: progress::CommentTreeProg>(
+        &mut self,
+        prog: P,
+        client: &Client,
+    ) -> Result<(), comment::fetch::Error> {
+        self.comments =
+            Some(Comment::get(client, prog, comment::RootType::Article, self.info.id).await?);
+        Ok(())
+    }
+}
 impl super::Item for Article {
     type Reply = Reply;
     fn from_reply(reply: Self::Reply, raw_data: RawData) -> Self {
@@ -158,27 +178,14 @@ impl super::Item for Article {
                 title: reply.title,
                 author: reply.author.0,
                 cover: reply.title_image.0,
+                has_comment: reply.comment_count > 0,
                 created_time: reply.created.0,
                 updated_time: reply.updated.0,
             },
             content: reply.content.0,
-            comments: Vec::new(),
+            comments: None,
             raw_data: Some(raw_data),
         }
-    }
-    async fn get_comments<P: progress::ItemProg>(
-        &mut self,
-        client: &crate::request::Client,
-        prog: &P,
-    ) -> Result<(), comment::FetchError> {
-        self.comments = Comment::get(
-            client,
-            prog.start_comment_tree(),
-            comment::RootType::Article,
-            self.info.id,
-        )
-        .await?;
-        Ok(())
     }
     async fn get_images<P: progress::ItemProg>(&mut self, client: &Client, prog: &P) -> bool {
         let u = self.content.image_urls();

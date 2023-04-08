@@ -1,6 +1,6 @@
 pub use crate::element::author::{UserId, UserType};
 use crate::{
-    element::{content::HasContent, Content},
+    element::{comment::HasComment, content::HasContent, Content},
     item::Item,
     meta::Version,
     progress,
@@ -92,6 +92,21 @@ impl HasContent for User {
         Some(&self.description)
     }
 }
+impl HasComment for User {
+    fn has_comment(&self) -> bool {
+        false
+    }
+    fn is_comment_fetched(&self) -> bool {
+        true
+    }
+    async fn get_comments<P>(
+        &mut self,
+        _: P,
+        _: &crate::request::Client,
+    ) -> Result<(), crate::element::comment::fetch::Error> {
+        Ok(())
+    }
+}
 
 #[derive(Deserialize)]
 pub struct Reply {
@@ -121,13 +136,6 @@ impl super::Item for User {
             description: reply.description.0,
             raw_data: Some(raw_data),
         }
-    }
-    async fn get_comments<P: crate::progress::ItemProg>(
-        &mut self,
-        _: &crate::request::Client,
-        _: &P,
-    ) -> Result<(), crate::element::comment::FetchError> {
-        Ok(())
     }
     async fn get_images<P: crate::progress::ItemProg>(
         &mut self,
