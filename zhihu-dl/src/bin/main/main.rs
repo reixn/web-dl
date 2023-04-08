@@ -81,8 +81,8 @@ impl Command {
     ) -> Result<bool, anyhow::Error> {
         match self {
             Self::Init => runtime.block_on(init_driver(driver, output))?,
-            Self::Item { cmd } => runtime.block_on(cmd.run(driver, output, prog))?,
-            Self::Container { cmd } => runtime.block_on(cmd.run(driver, output, prog))?,
+            Self::Item { cmd } => runtime.block_on(cmd.run(driver, prog))?,
+            Self::Container { cmd } => runtime.block_on(cmd.run(driver, prog))?,
             Self::Save => save_state(driver, output)?,
             Self::Command { file } => {
                 output.write_tagged(

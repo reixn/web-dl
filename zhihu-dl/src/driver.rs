@@ -1,7 +1,7 @@
 use crate::{
     element::comment,
     item::{Fetchable, Item, ItemContainer},
-    progress,
+    progress::{self, ContainerJob, ItemJob},
     raw_data::{self, RawData, RawDataInfo},
     request::Client,
     store::{BasicStoreItem, Store, StoreError, StoreItem},
@@ -9,7 +9,10 @@ use crate::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 use thiserror;
 use web_dl_base::{id::HasId, media, storable};
 
@@ -117,6 +120,15 @@ impl Default for GetConfig {
         Self {
             get_comments: false,
             convert_html: true,
+        }
+    }
+}
+impl Display for GetConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.get_comments {
+            f.write_str("+comment")
+        } else {
+            Ok(())
         }
     }
 }
@@ -242,12 +254,15 @@ impl Driver {
     ) -> Result<Option<I>, ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
-        P: progress::ItemProg,
+        P: progress::Reporter,
     {
         Ok(if <I as StoreItem>::in_store(id, &self.store) {
             None
         } else {
-            Some(self.update_item_impl(prog, id, config).await?.0)
+            let p = prog.start_item("Getting", "", I::TYPE, id, config);
+            let ret = self.update_item_impl(&p, id, config).await?.0;
+            p.finish("Got", id);
+            Some(ret)
         })
     }
     pub async fn add_raw_item<I, P>(
@@ -260,7 +275,9 @@ impl Driver {
         I: Item + media::HasImage + BasicStoreItem,
         P: progress::ItemProg,
     {
-        self.process_response(prog, data, config).await.map(|v| v.0)
+        self.process_response::<I, _>(prog, data, config)
+            .await
+            .map(|v| v.0)
     }
 
     pub async fn download_item<'a, I, P, Pat>(
@@ -273,12 +290,18 @@ impl Driver {
     ) -> Result<Option<I>, ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
-        P: progress::ItemProg,
+        P: progress::Reporter,
         Pat: AsRef<Path>,
     {
-        let canon_dest = prepare_dest(dest).map_err(ItemError::DestPrep)?;
-        let v = self.get_item(prog, id, config).await?;
-        let store_path = self.store.store_path::<I>(id);
+        let canon_dest = prepare_dest(dest.as_ref()).map_err(ItemError::DestPrep)?;
+        let (v, store_path) = if <I as StoreItem>::in_store(id, &self.store) {
+            (None, self.store.store_path::<I>(id))
+        } else {
+            let p = prog.start_item("Downloading", "", I::TYPE, id, config);
+            let (v, sp) = self.update_item_impl::<I, _>(&p, id, config).await?;
+            p.finish("Downloaded", id);
+            (Some(v), sp)
+        };
         log::info!(
             "link {} {} ({}) to {}",
             I::TYPE,
@@ -286,14 +309,13 @@ impl Driver {
             store_path.display(),
             canon_dest.display()
         );
-        match link_to_dest(relative, store_path.as_path(), &canon_dest) {
-            Ok(_) => Ok(v),
-            Err(e) => Err(ItemError::Link {
-                store_path,
-                dest: canon_dest,
-                source: e,
-            }),
-        }
+        link_to_dest(relative, store_path.as_path(), &canon_dest).map_err(|e| ItemError::Link {
+            store_path,
+            dest: canon_dest,
+            source: e,
+        })?;
+        prog.link_item(I::TYPE, id, dest);
+        Ok(v)
     }
     pub async fn update_item<'a, I, P>(
         &mut self,
@@ -303,9 +325,12 @@ impl Driver {
     ) -> Result<I, ItemError>
     where
         I: Fetchable + Item + media::HasImage + BasicStoreItem,
-        P: progress::ItemProg,
+        P: progress::Reporter,
     {
-        self.update_item_impl(prog, id, config).await.map(|r| r.0)
+        let p = prog.start_item("Updating", "", I::TYPE, id, config);
+        let ret = self.update_item_impl(&p, id, config).await?;
+        p.finish("Updated", id);
+        Ok(ret.0)
     }
 
     async fn update_container_impl<'a, IC, I, O, P>(
@@ -407,14 +432,17 @@ impl Driver {
     where
         I: Item + StoreItem + media::HasImage,
         IC: ItemContainer<O, I>,
-        P: progress::ItemContainerProg,
+        P: progress::Reporter,
     {
         if IC::in_store(id, &self.store.containers) {
             Ok(None)
         } else {
-            self.update_container_impl::<IC, I, O, _>(prog, id, config)
-                .await
-                .map(|r| Some(r.0))
+            let p = prog.start_item_container::<I, O, IC, _, _>("Getting", "", id, config);
+            let (ret, _) = self
+                .update_container_impl::<IC, I, O, _>(&p, id, config)
+                .await?;
+            p.finish("Got", Some(ret.len()), id);
+            Ok(Some(ret))
         }
     }
     pub async fn update_container<'a, IC, I, O, P>(
@@ -426,11 +454,14 @@ impl Driver {
     where
         I: Item + StoreItem + media::HasImage,
         IC: ItemContainer<O, I>,
-        P: progress::ItemContainerProg,
+        P: progress::Reporter,
     {
-        self.update_container_impl::<IC, I, O, _>(prog, id, config)
-            .await
-            .map(|r| r.0)
+        let p = prog.start_item_container::<I, O, IC, _, _>("Updating", "", id, config);
+        let (r, _) = self
+            .update_container_impl::<IC, I, O, _>(&p, id, config)
+            .await?;
+        p.finish("Updated", Some(r.len()), id);
+        Ok(r)
     }
     pub async fn download_container<'a, IC, I, O, P, Pat>(
         &mut self,
@@ -443,16 +474,18 @@ impl Driver {
     where
         I: Item + StoreItem + media::HasImage,
         IC: ItemContainer<O, I>,
-        P: progress::ItemContainerProg,
+        P: progress::Reporter,
         Pat: AsRef<Path>,
     {
         let canon_dest = prepare_dest(dest.as_ref()).map_err(ContainerError::from)?;
         let (ret, store_path) = if IC::in_store(id, &self.store.containers) {
             (None, self.store.container_store_path::<IC, O, I>(id))
         } else {
+            let p = prog.start_item_container::<I, O, IC, _, _>("Downloading", "", id, config);
             let (v, sp) = self
-                .update_container_impl::<IC, I, O, P>(prog, id, config)
+                .update_container_impl::<IC, I, O, _>(&p, id, config)
                 .await?;
+            p.finish("Downloaded", Some(v.len()), id);
             (Some(v), sp)
         };
         link_to_dest(relative, store_path.as_path(), canon_dest.as_path()).map_err(|e| {
@@ -462,6 +495,7 @@ impl Driver {
                 source: e,
             }
         })?;
+        prog.link_container::<I, O, IC, _, _>(id, dest);
         Ok(ret)
     }
 }

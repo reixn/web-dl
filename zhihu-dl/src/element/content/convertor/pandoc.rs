@@ -212,8 +212,8 @@ pub fn to_pandoc_json(document: &Document, images_store: &Path) -> String {
 }
 
 pub struct Pandoc;
-pub struct PandocConfig {
-    pub format: String,
+pub struct PandocConfig<'a> {
+    pub format: &'a str,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -239,12 +239,12 @@ pub enum ConvertError {
 }
 
 impl super::super::Convertor for Pandoc {
-    type Config = PandocConfig;
+    type Config<'a> = PandocConfig<'a> where Self:'a;
     type Err = ConvertError;
     fn convert<S: AsRef<std::path::Path>, P: AsRef<std::path::Path>>(
         image_store: S,
         document: &crate::element::content::document::Document,
-        config: &Self::Config,
+        config: &Self::Config<'_>,
         dest: P,
     ) -> Result<(), Self::Err> {
         use crate::util::relative_path::{prepare_dest, relative_path_to};
@@ -260,7 +260,7 @@ impl super::super::Convertor for Pandoc {
         });
         let mut ch = {
             let mut cmd = process::Command::new("pandoc");
-            cmd.args(["-f", "json", "-t", config.format.as_str(), "-o"])
+            cmd.args(["-f", "json", "-t", config.format, "-o"])
                 .arg(dest.as_ref())
                 .stdin(process::Stdio::piped());
             cmd.spawn().map_err(|e| ConvertError::CreateProcess {

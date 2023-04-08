@@ -1,5 +1,7 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::Path};
 pub use web_dl_base::progress::{ImageProg, ImagesProg, Progress};
+
+use crate::item;
 
 pub trait FetchProg: Progress {
     fn set_count(&mut self, count: Option<u64>);
@@ -71,23 +73,50 @@ pub trait ItemContainerProg: Progress {
         Self: 'a;
     fn start_items(&self, count: u64) -> Self::ItemsRep<'_>;
 }
+
+pub trait ItemJob: ItemProg {
+    fn finish<I: Display>(self, operation: &str, id: I);
+}
+pub trait ContainerJob: ItemContainerProg {
+    fn finish<I: Display>(self, operation: &str, num: Option<usize>, id: I);
+}
 pub trait Reporter: Progress {
     fn new(jobs: Option<u64>) -> Self;
 
-    type ItemRep<'a>: ItemProg
+    type ItemRep<'a>: ItemJob
     where
         Self: 'a;
-    fn start_item<I: Display>(&self, kind: &str, id: I) -> Self::ItemRep<'_>;
-
-    type ItemContainerRep<'a>: ItemContainerProg
-    where
-        Self: 'a;
-    fn start_item_container<I: Display>(
+    fn start_item<O: Display, I: Display>(
         &self,
-        kind: &str,
+        operation: &str,
+        prefix: &'static str,
+        kind: &'static str,
         id: I,
-        item_kind: &str,
-    ) -> Self::ItemContainerRep<'_>;
+        option: O,
+    ) -> Self::ItemRep<'_>;
+    fn link_item<I: Display, P: AsRef<Path>>(&self, kind: &str, id: I, dest: P);
+
+    type ItemContainerRep<'a>: ContainerJob
+    where
+        Self: 'a;
+    fn start_item_container<II, IO, IC, I, O>(
+        &self,
+        operation: &str,
+        prefix: &'static str,
+        id: I,
+        option: O,
+    ) -> Self::ItemContainerRep<'_>
+    where
+        II: item::Item,
+        IC: item::ItemContainer<IO, II>,
+        I: Display,
+        O: Display;
+    fn link_container<II, IO, IC, I, P>(&self, id: I, dest: P)
+    where
+        II: item::Item,
+        IC: item::ItemContainer<IO, II>,
+        I: Display,
+        P: AsRef<Path>;
 }
 
 pub mod progress_bar;

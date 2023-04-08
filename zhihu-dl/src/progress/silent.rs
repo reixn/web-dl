@@ -88,23 +88,41 @@ impl ItemContainerProg for Silent {
         Silent
     }
 }
+
+impl ItemJob for Silent {
+    fn finish<I: Display>(self, _: &str, _: I) {}
+}
+impl ContainerJob for Silent {
+    fn finish<I: Display>(self, _: &str, _: Option<usize>, _: I) {}
+}
+
 impl Reporter for Silent {
     fn new(_: Option<u64>) -> Self {
         Silent
     }
 
     type ItemRep<'a> = Silent;
-    fn start_item<I: Display>(&self, _: &str, _: I) -> Self::ItemRep<'_> {
-        Silent
-    }
-
-    type ItemContainerRep<'a> = Silent;
-    fn start_item_container<I: Display>(
+    fn start_item<O: Display, I: Display>(
         &self,
         _: &str,
-        _: I,
         _: &str,
+        _: &str,
+        _: I,
+        _: O,
+    ) -> Self::ItemRep<'_> {
+        Silent
+    }
+    fn link_item<I: Display, P: AsRef<Path>>(&self, _: &str, _: I, _: P) {}
+
+    type ItemContainerRep<'a> = Silent;
+    fn start_item_container<II, IO, IC, I, O>(
+        &self,
+        _: &str,
+        _: &'static str,
+        _: I,
+        _: O,
     ) -> Self::ItemContainerRep<'_> {
         Silent
     }
+    fn link_container<II, IO, IC, I, P>(&self, _: I, _: P) {}
 }

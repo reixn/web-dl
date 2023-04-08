@@ -21,12 +21,14 @@ pub mod document;
 mod html_reader;
 
 pub trait Convertor {
-    type Config;
+    type Config<'a>
+    where
+        Self: 'a;
     type Err: std::error::Error;
     fn convert<S: AsRef<std::path::Path>, P: AsRef<std::path::Path>>(
         image_store: S,
         document: &document::Document,
-        config: &Self::Config,
+        config: &Self::Config<'_>,
         dest: P,
     ) -> Result<(), Self::Err>;
 }
