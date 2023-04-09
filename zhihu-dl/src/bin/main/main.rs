@@ -4,10 +4,15 @@
 use anyhow::Context;
 use clap::{FromArgMatches, Parser, Subcommand, ValueEnum};
 use indicatif::HumanDuration;
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    io::{self, Seek},
+    path::PathBuf,
+    time::SystemTime,
+};
 use termcolor::{BufferedStandardStream, Color};
 use zhihu_dl::{
-    driver::Driver,
+    driver::{manifest::Manifest, Driver},
     progress::{progress_bar::ProgressReporter, Reporter},
     store,
 };
@@ -19,6 +24,81 @@ mod types;
 use container::ContainerCmd;
 use item::ItemCmd;
 use types::*;
+
+#[derive(Debug, Subcommand)]
+enum ManifestOper {
+    Apply {
+        #[arg(default_value = "manifest.ron")]
+        path: String,
+    },
+    Format {
+        #[arg(default_value = "manifest.ron")]
+        path: String,
+    },
+}
+impl ManifestOper {
+    async fn run(
+        self,
+        reporter: &ProgressReporter,
+        output: &mut Output,
+        driver: &mut Driver,
+    ) -> Result<(), anyhow::Error> {
+        match self {
+            Self::Format { path } => {
+                let mut file = fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(path.as_str())
+                    .with_context(|| format!("failed to open file {}", path))?;
+                let m: Manifest = ron::de::from_reader(io::BufReader::new(&file))
+                    .context("failed to deserialize ron")?;
+                file.set_len(0)
+                    .context("failed to truncate file for write")?;
+                file.rewind().context("failed to seek to begin")?;
+                ron::ser::to_writer_pretty(
+                    io::BufWriter::new(&file),
+                    &m,
+                    ron::ser::PrettyConfig::default(),
+                )
+                .context("failed to serialize ron")?;
+                output.write_tagged(
+                    Color::Green,
+                    "Formatted",
+                    format_args_nl!("ron manifest {}", path),
+                );
+            }
+            Self::Apply { path } => {
+                let st = SystemTime::now();
+                output.write_tagged(
+                    Color::Cyan,
+                    "Applying",
+                    format_args_nl!("manifest {}", path),
+                );
+                driver
+                    .apply_manifest(
+                        reporter,
+                        &ron::de::from_reader(io::BufReader::new(
+                            fs::File::open(path.as_str())
+                                .with_context(|| format!("failed to open file {}", path))?,
+                        ))
+                        .context("failed to deserialize ron")?,
+                    )
+                    .await
+                    .context("failed to apply manifest")?;
+                output.write_tagged(
+                    Color::Green,
+                    "Applied",
+                    format_args_nl!(
+                        "manifest {} took {}",
+                        path,
+                        HumanDuration(SystemTime::now().duration_since(st).unwrap())
+                    ),
+                );
+            }
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Subcommand)]
 enum Command {
@@ -34,6 +114,10 @@ enum Command {
     },
     Command {
         file: String,
+    },
+    Manifest {
+        #[command(subcommand)]
+        operation: ManifestOper,
     },
     /// migrate store
     Migrate,
@@ -118,6 +202,9 @@ impl Command {
                         HumanDuration(std::time::SystemTime::now().duration_since(st).unwrap())
                     ),
                 )
+            }
+            Self::Manifest { operation } => {
+                runtime.block_on(operation.run(prog, output, driver))?
             }
             Self::Migrate => anyhow::bail!("migrate is not supported in repl or file"),
             Self::Exit { force } => {

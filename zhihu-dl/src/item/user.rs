@@ -264,7 +264,7 @@ impl<'b> super::ItemContainer<super::VoidOpt, super::column::Column> for User {
 
 pub struct Created;
 impl StoreItemContainer<Created, super::collection::Collection> for User {
-    const OPTION_NAME: &'static str = "created";
+    const OPTION_NAME: &'static str = "created-collection";
     type ItemList = BTreeSet<super::collection::CollectionId>;
     fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
         info.user.get(&id.0).map_or(false, |v| v.collection.created)
@@ -297,7 +297,7 @@ impl super::ItemContainer<Created, super::collection::Collection> for User {
 
 pub struct Liked;
 impl StoreItemContainer<Liked, super::collection::Collection> for User {
-    const OPTION_NAME: &'static str = "liked";
+    const OPTION_NAME: &'static str = "liked-collection";
     type ItemList = BTreeSet<super::collection::CollectionId>;
     fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
         info.user.get(&id.0).map_or(false, |v| v.collection.liked)

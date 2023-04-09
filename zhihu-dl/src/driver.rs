@@ -8,7 +8,7 @@ use crate::{
     util::relative_path::{link_to_dest, prepare_dest, DestPrepError, LinkError},
 };
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     path::{Path, PathBuf},
@@ -110,9 +110,23 @@ pub enum ContainerError {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+pub mod manifest;
+
+mod get_config {
+    #[inline]
+    pub fn comments_default() -> bool {
+        false
+    }
+    #[inline]
+    pub fn convert_html_default() -> bool {
+        true
+    }
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GetConfig {
+    #[serde(default = "get_config::comments_default")]
     pub get_comments: bool,
+    #[serde(default = "get_config::convert_html_default")]
     pub convert_html: bool,
 }
 impl Default for GetConfig {

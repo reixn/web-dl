@@ -43,6 +43,7 @@ pandoc_ast = "0.8.4"
 ron = "0.8.0"
 yansi = "0.5.1"
 zhihu-dl-derive = { path = "../zhihu-dl-derive" }
+async-recursion = "1.0.4"
 
 [dev-dependencies]
 hex-literal = "0.3.4"

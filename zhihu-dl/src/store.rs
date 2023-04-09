@@ -352,6 +352,9 @@ impl Store {
     pub fn image_path(&self) -> PathBuf {
         self.root.join(IMAGE_DIR)
     }
+    pub fn root(&self) -> &PathBuf {
+        &self.root
+    }
     pub fn save(&mut self) -> Result<(), StoreError> {
         store_yaml(&self.version, &self.root, VERSION_FILE)?;
         store_yaml(&self.objects, &self.root, OBJECT_INFO)?;
@@ -382,6 +385,16 @@ impl Store {
     }
     pub fn get_media<I: media::HasImage>(&mut self, object: &mut I) -> Result<(), media::Error> {
         object.load_images(&mut self.media_loader)
+    }
+    pub fn get_container<O, I: HasId, IC: StoreItemContainer<O, I>>(
+        &self,
+        id: IC::Id<'_>,
+    ) -> Result<IC::ItemList, StoreError> {
+        load_yaml(
+            self.container_store_path::<IC, O, I>(id),
+            IC::ItemList::default,
+            ITEM_LIST,
+        )
     }
 
     pub fn add_media<I: media::HasImage>(&mut self, data: &I) -> Result<(), media::Error> {
