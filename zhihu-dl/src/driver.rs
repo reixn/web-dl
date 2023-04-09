@@ -202,7 +202,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<(I, PathBuf), ItemError>
     where
-        I: Item + media::HasImage + BasicStoreItem,
+        I: Item + BasicStoreItem,
         P: progress::ItemProg,
     {
         let mut ret: I = I::from_reply(
@@ -230,7 +230,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<(I, PathBuf), ItemError>
     where
-        I: Fetchable + Item + media::HasImage + BasicStoreItem,
+        I: Fetchable + Item + BasicStoreItem,
         P: progress::ItemProg,
     {
         self.process_response(
@@ -253,7 +253,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<Option<I>, ItemError>
     where
-        I: Fetchable + Item + media::HasImage + BasicStoreItem,
+        I: Fetchable + Item + BasicStoreItem,
         P: progress::Reporter,
     {
         Ok(if <I as StoreItem>::in_store(id, &self.store) {
@@ -272,7 +272,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<I, ItemError>
     where
-        I: Item + media::HasImage + BasicStoreItem,
+        I: Item + BasicStoreItem,
         P: progress::ItemProg,
     {
         self.process_response::<I, _>(prog, data, config)
@@ -289,7 +289,7 @@ impl Driver {
         dest: Pat,
     ) -> Result<Option<I>, ItemError>
     where
-        I: Fetchable + Item + media::HasImage + BasicStoreItem,
+        I: Fetchable + Item + BasicStoreItem,
         P: progress::Reporter,
         Pat: AsRef<Path>,
     {
@@ -324,7 +324,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<I, ItemError>
     where
-        I: Fetchable + Item + media::HasImage + BasicStoreItem,
+        I: Fetchable + Item + BasicStoreItem,
         P: progress::Reporter,
     {
         let p = prog.start_item("Updating", "", I::TYPE, id, config);
@@ -340,7 +340,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<(Vec<ContainerItem<I>>, PathBuf), ContainerError>
     where
-        I: Item + StoreItem + media::HasImage,
+        I: Item,
         IC: ItemContainer<O, I>,
         P: progress::ItemContainerProg,
     {
@@ -430,7 +430,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<Option<Vec<ContainerItem<I>>>, ContainerError>
     where
-        I: Item + StoreItem + media::HasImage,
+        I: Item,
         IC: ItemContainer<O, I>,
         P: progress::Reporter,
     {
@@ -452,7 +452,7 @@ impl Driver {
         config: GetConfig,
     ) -> Result<Vec<ContainerItem<I>>, ContainerError>
     where
-        I: Item + StoreItem + media::HasImage,
+        I: Item,
         IC: ItemContainer<O, I>,
         P: progress::Reporter,
     {
@@ -472,7 +472,7 @@ impl Driver {
         dest: Pat,
     ) -> Result<Option<Vec<ContainerItem<I>>>, ContainerError>
     where
-        I: Item + StoreItem + media::HasImage,
+        I: Item,
         IC: ItemContainer<O, I>,
         P: progress::Reporter,
         Pat: AsRef<Path>,
