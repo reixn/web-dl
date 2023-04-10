@@ -115,11 +115,21 @@ fn gen_refs(info: &Vec<FieldInfo>) -> TokenStream {
     }
     ret
 }
+fn gen_drops(info: &[FieldInfo]) -> TokenStream {
+    let mut ret = TokenStream::new();
+    for i in info {
+        let expr = &i.expr;
+        ret.extend(quote! { #expr.drop_images(); });
+    }
+    ret
+}
+
 fn gen_impl(
     name: Ident,
     load_impl: TokenStream,
     store_impl: TokenStream,
     r_set_impl: TokenStream,
+    drop_impl: TokenStream,
 ) -> proc_macro::TokenStream {
     let t_name = exported!(HasImage);
     let res = support!(Result);
@@ -141,6 +151,9 @@ fn gen_impl(
             {
                 #r_set_impl
             }
+            fn drop_images(&mut self) {
+                #drop_impl
+            }
         }
     }
     .into()
@@ -151,6 +164,7 @@ fn unit_impl(name: Ident) -> proc_macro::TokenStream {
         name,
         quote!(#res::Ok(())),
         quote!(#res::Ok(())),
+        TokenStream::new(),
         TokenStream::new(),
     )
 }
@@ -228,6 +242,7 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 gen_exprs(&s, true),
                 gen_exprs(&s, false),
                 gen_refs(&s),
+                gen_drops(&s),
             )
         }
         Data::Enum(e) => {
@@ -238,6 +253,7 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             let mut load_image = TokenStream::new();
             let mut store_image = TokenStream::new();
             let mut image_ref = TokenStream::new();
+            let mut drop_image = TokenStream::new();
             for v in e.variants.into_iter() {
                 let VariantRecv {
                     ident: vid,
@@ -245,9 +261,10 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     fields,
                 } = VariantRecv::from_variant(&v).unwrap();
                 if fields.is_empty() {
-                    load_image.extend(quote!(Self::#vid { .. } => #res::Ok(())));
-                    store_image.extend(quote!(Self::#vid { .. } => #res::Ok(())));
-                    image_ref.extend(quote!(Self::#vid { .. } => ()));
+                    load_image.extend(quote!(Self::#vid { .. } => #res::Ok(()),));
+                    store_image.extend(quote!(Self::#vid { .. } => #res::Ok(()),));
+                    image_ref.extend(quote!(Self::#vid { .. } => (),));
+                    drop_image.extend(quote!(Self::#vid {..} => (),));
                     continue;
                 }
                 let matched = {
@@ -271,15 +288,18 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 let load_expr = gen_exprs(&fields, true);
                 let store_expr = gen_exprs(&fields, false);
                 let r = gen_refs(&fields);
+                let d = gen_drops(&fields);
                 load_image.extend(quote!(#matched { #load_expr }));
                 store_image.extend(quote!(#matched { #store_expr }));
                 image_ref.extend(quote!( #matched { #r } ));
+                drop_image.extend(quote!(#matched { #d }));
             }
             gen_impl(
                 input.ident,
                 quote!( match self { #load_image } ),
                 quote!(match self { #store_image }),
                 quote!( match self { #image_ref } ),
+                quote!(match self { #drop_image }),
             )
         }
         Data::Union(_) => panic!("derive HasImage for union is not supported"),

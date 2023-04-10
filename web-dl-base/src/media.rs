@@ -28,6 +28,7 @@ pub enum Error {
 pub trait HasImage {
     fn load_images(&mut self, loader: &mut Loader) -> Result<(), Error>;
     fn store_images(&self, storer: &mut Storer) -> Result<(), Error>;
+    fn drop_images(&mut self);
     fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut RefSet<'b>)
     where
         'b: 'a;
@@ -74,15 +75,19 @@ impl<I: HasImage> HasImage for Option<I> {
     where
         'b: 'a,
     {
-        match self {
-            Some(i) => i.image_refs(ref_set),
-            None => (),
+        if let Some(i) = self {
+            i.image_refs(ref_set);
         }
     }
     fn store_images(&self, storer: &mut Storer) -> Result<(), Error> {
         match self {
             Some(i) => i.store_images(storer),
             None => Ok(()),
+        }
+    }
+    fn drop_images(&mut self) {
+        if let Some(v) = self {
+            v.drop_images();
         }
     }
 }
@@ -111,6 +116,11 @@ impl<I: id::HasId + HasImage> HasImage for Vec<I> {
     {
         for i in self {
             i.image_refs(ref_set)
+        }
+    }
+    fn drop_images(&mut self) {
+        for i in self.iter_mut() {
+            i.drop_images();
         }
     }
 }
@@ -157,6 +167,9 @@ impl HasImage for ImageRef {
                 .map_err(Error::Store),
             None => Ok(()),
         }
+    }
+    fn drop_images(&mut self) {
+        self.data = None;
     }
 }
 
@@ -253,9 +266,13 @@ impl HasImage for Image {
     where
         'b: 'a,
     {
-        match self {
-            Image::Ref(r) => r.image_refs(ref_set),
-            Image::Url(_) => (),
+        if let Self::Ref(r) = self {
+            r.image_refs(ref_set);
+        }
+    }
+    fn drop_images(&mut self) {
+        if let Self::Ref(r) = self {
+            r.drop_images();
         }
     }
 }
