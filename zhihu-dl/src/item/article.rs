@@ -156,8 +156,10 @@ impl HasComment for Article {
         prog: P,
         client: &Client,
     ) -> Result<(), comment::fetch::Error> {
-        self.comments =
-            Some(Comment::get(client, prog, comment::RootType::Article, self.info.id).await?);
+        match Comment::get(client, prog, comment::RootType::Article, self.info.id).await? {
+            Some(c) => self.comments = Some(c),
+            None => self.info.has_comment = false,
+        }
         Ok(())
     }
 }

@@ -94,8 +94,10 @@ impl HasComment for Question {
         prog: P,
         client: &crate::request::Client,
     ) -> Result<(), comment::fetch::Error> {
-        self.comments =
-            Some(Comment::get(client, prog, comment::RootType::Question, self.info.id).await?);
+        match Comment::get(client, prog, comment::RootType::Question, self.info.id).await? {
+            Some(c) => self.comments = Some(c),
+            None => self.info.has_comment = false,
+        }
         Ok(())
     }
 }

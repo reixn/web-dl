@@ -128,8 +128,10 @@ impl HasComment for Pin {
         prog: P,
         client: &crate::request::Client,
     ) -> Result<(), comment::fetch::Error> {
-        self.comments =
-            Some(Comment::get(client, prog, comment::RootType::Pin, self.body.info.id).await?);
+        match Comment::get(client, prog, comment::RootType::Pin, self.body.info.id).await? {
+            Some(c) => self.comments = Some(c),
+            None => self.body.info.has_comment = false,
+        }
         Ok(())
     }
 }

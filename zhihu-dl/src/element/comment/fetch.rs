@@ -220,8 +220,11 @@ impl Comment {
         prog: P,
         root_type: RootType,
         id: I,
-    ) -> Result<Vec<Comment>, Error> {
+    ) -> Result<Option<Vec<Comment>>, Error> {
         let mut ret = fetch_root(client, prog.start_fetch_root(), root_type, id).await?;
+        if ret.is_empty() {
+            return Ok(None);
+        }
         {
             let mut child_prog = prog.start_comments(ret.len() as u64);
             let mut child = LinkedList::new();
@@ -279,6 +282,6 @@ impl Comment {
                 }
             }
         }
-        Ok(ret.into_iter().collect())
+        Ok(Some(ret.into_iter().collect()))
     }
 }
