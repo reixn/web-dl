@@ -47,13 +47,15 @@ macro_rules! exported {
     };
 }
 
-struct FieldInfo {
+struct FieldInfo<M> {
+    match_field: M,
+    match_ident: M,
     name: String,
     expr: TokenStream,
     spec: HasImage,
     is_ref: bool,
 }
-fn gen_expr(info: &FieldInfo, is_load: bool, is_last: bool) -> TokenStream {
+fn gen_expr<M>(info: &FieldInfo<M>, is_load: bool, is_last: bool) -> TokenStream {
     let op = {
         let name = &info.name;
         let expr = &info.expr;
@@ -93,7 +95,7 @@ fn gen_expr(info: &FieldInfo, is_load: bool, is_last: bool) -> TokenStream {
     }
 }
 
-fn gen_exprs(fields: &Vec<FieldInfo>, is_load: bool) -> TokenStream {
+fn gen_exprs<M>(fields: &[FieldInfo<M>], is_load: bool) -> TokenStream {
     if fields.is_empty() {
         let res = support!(Result);
         return quote!(#res::Ok(()));
@@ -107,15 +109,15 @@ fn gen_exprs(fields: &Vec<FieldInfo>, is_load: bool) -> TokenStream {
     ret
 }
 
-fn gen_refs(info: &Vec<FieldInfo>) -> TokenStream {
+fn gen_refs<M>(info: &[FieldInfo<M>]) -> TokenStream {
     let mut ret = TokenStream::new();
     for i in info {
-        let expr = i.expr.clone();
+        let expr = &i.expr;
         ret.extend(quote! { #expr.image_refs(__ref_set); });
     }
     ret
 }
-fn gen_drops(info: &[FieldInfo]) -> TokenStream {
+fn gen_drops<M>(info: &[FieldInfo<M>]) -> TokenStream {
     let mut ret = TokenStream::new();
     for i in info {
         let expr = &i.expr;
@@ -171,37 +173,43 @@ fn unit_impl(name: Ident) -> proc_macro::TokenStream {
 
 struct VariantRecv {
     ident: Ident,
-    match_ident: Vec<(TokenStream, bool)>,
-    fields: Vec<FieldInfo>,
+    complete: bool,
+    fields: Vec<FieldInfo<TokenStream>>,
 }
 impl FromVariant for VariantRecv {
     fn from_variant(variant: &syn::Variant) -> darling::Result<Self> {
-        let mut m = Vec::with_capacity(variant.fields.len());
         let mut f_info = Vec::with_capacity(variant.fields.len());
         for (idx, f) in variant.fields.iter().enumerate() {
-            let (id, name) = match &f.ident {
-                Some(i) => (i.to_token_stream(), format!("{}::{}", variant.ident, i)),
-                None => (
-                    format_ident!("__field_{}", idx).to_token_stream(),
-                    format!("{}::{}", variant.ident, idx),
-                ),
-            };
-            m.push((id.clone(), f.ident.is_some()));
-            FieldSpec::from_field(f).map(|fr| match fr {
-                FieldSpec::HasImage(spec) => {
-                    f_info.push(FieldInfo {
-                        name,
-                        expr: id,
-                        spec,
-                        is_ref: true,
-                    });
-                }
-                FieldSpec::Ignore => (),
-            })?;
+            if let FieldSpec::HasImage(spec) = FieldSpec::from_field(f)? {
+                f_info.push(match &f.ident {
+                    Some(i) => {
+                        let tok = i.to_token_stream();
+                        FieldInfo {
+                            match_field: tok.clone(),
+                            match_ident: tok.clone(),
+                            name: format!("{}::{}", variant.ident, i),
+                            expr: tok,
+                            spec,
+                            is_ref: true,
+                        }
+                    }
+                    None => {
+                        let tok = format_ident!("__field_{}", idx).to_token_stream();
+                        FieldInfo {
+                            match_field: syn::Index::from(idx).to_token_stream(),
+                            match_ident: tok.clone(),
+                            name: format!("{}::{}", variant.ident, idx),
+                            expr: tok,
+                            spec,
+                            is_ref: true,
+                        }
+                    }
+                })
+            }
         }
         Ok(Self {
             ident: variant.ident.clone(),
-            match_ident: m,
+            complete: f_info.len() == variant.fields.len(),
             fields: f_info,
         })
     }
@@ -212,7 +220,7 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
     match input.data {
         Data::Struct(s) => {
-            let s: Vec<FieldInfo> = match s.fields {
+            let s: Vec<FieldInfo<()>> = match s.fields {
                 Fields::Named(n) => n.named,
                 Fields::Unnamed(u) => u.unnamed,
                 Fields::Unit => syn::punctuated::Punctuated::new(),
@@ -222,12 +230,16 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             .filter_map(|(idx, f)| match FieldSpec::from_field(&f).unwrap() {
                 FieldSpec::HasImage(spec) => Some(match &f.ident {
                     Some(i) => FieldInfo {
+                        match_field: (),
+                        match_ident: (),
                         name: i.to_string(),
                         expr: quote!(self.#i),
                         spec,
                         is_ref: false,
                     },
                     None => FieldInfo {
+                        match_field: (),
+                        match_ident: (),
                         name: idx.to_string(),
                         expr: quote!(self.#idx),
                         spec,
@@ -257,7 +269,7 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
             for v in e.variants.into_iter() {
                 let VariantRecv {
                     ident: vid,
-                    match_ident,
+                    complete,
                     fields,
                 } = VariantRecv::from_variant(&v).unwrap();
                 if fields.is_empty() {
@@ -269,21 +281,15 @@ pub fn derive_has_image(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 }
                 let matched = {
                     let mut ret = TokenStream::new();
-                    let mut named = false;
-                    let mut first = true;
-                    for (id, n) in match_ident {
-                        if !first {
-                            ret.extend(quote!(,));
-                        }
-                        first = false;
-                        named |= n;
-                        ret.extend(id);
+                    for f in &fields {
+                        let m = &f.match_field;
+                        let i = &f.match_ident;
+                        ret.extend(quote! (#m:#i,));
                     }
-                    if named {
-                        quote!(Self::#vid{ #ret } =>)
-                    } else {
-                        quote!(Self::#vid(#ret) =>)
+                    if !complete {
+                        ret.extend(quote!(..));
                     }
+                    quote!(Self::#vid{ #ret } =>)
                 };
                 let load_expr = gen_exprs(&fields, true);
                 let store_expr = gen_exprs(&fields, false);
