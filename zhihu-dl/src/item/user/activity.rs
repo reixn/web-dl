@@ -2,10 +2,10 @@ use crate::{
     element::{comment::HasComment, content::HasContent},
     item::{
         answer::{self, Answer},
-        any::{OtherInfo, OtherItem},
         article::{self, Article},
         collection::{self, Collection},
         column::{self, Column},
+        other::{OtherInfo, OtherItem},
         pin::{self, Pin},
         question::{self, Question},
         Item, ItemContainer, VoidOpt,

@@ -45,24 +45,26 @@ pub trait ItemContainer<O, I: Item>: HasId + store::StoreItemContainer<O, I> {
 pub struct VoidOpt;
 
 pub mod answer;
-pub use answer::Answer;
+pub use answer::{Answer, AnswerId};
 
 pub mod any;
 
 pub mod article;
-pub use article::Article;
+pub use article::{Article, ArticleId};
 
 pub mod collection;
-pub use collection::Collection;
+pub use collection::{Collection, CollectionId};
 
 pub mod column;
-pub use column::Column;
+pub use column::{Column, ColumnId};
 
 pub mod pin;
-pub use pin::Pin;
+pub use pin::{Pin, PinId};
 
 pub mod question;
-pub use question::Question;
+pub use question::{Question, QuestionId};
 
 pub mod user;
-pub use user::User;
+pub use user::{User, UserId};
+
+pub mod other;
