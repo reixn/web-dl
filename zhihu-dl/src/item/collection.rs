@@ -74,15 +74,7 @@ impl HasId for Collection {
         self.info.id
     }
 }
-
-impl BasicStoreItem for Collection {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.collection.contains(&id)
-    }
-    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.collection.insert(self.info.id);
-    }
-}
+basic_store_item!(Collection, collection);
 
 impl super::Fetchable for Collection {
     async fn fetch<'a>(
@@ -166,11 +158,11 @@ impl super::Item for Collection {
 impl StoreItemContainer<super::VoidOpt, super::any::Any> for Collection {
     const OPTION_NAME: &'static str = "item";
     type ItemList = any::AnyList;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.collection.contains(&id)
+    fn in_store(id: Self::Id<'_>, store: &store::Store) -> bool {
+        store.objects.collection.get(&id).map_or(false, |v| v.item)
     }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.collection.insert(id);
+    fn add_info(id: Self::Id<'_>, store: &mut store::Store) {
+        store.objects.collection.entry(id).or_default().item = true;
     }
     fn add_item(id: <super::any::Any as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(id)

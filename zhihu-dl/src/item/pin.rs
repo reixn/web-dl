@@ -93,14 +93,7 @@ impl HasId for Pin {
         self.body.info.id
     }
 }
-impl BasicStoreItem for Pin {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.pin.contains(&id)
-    }
-    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.pin.insert(self.body.info.id);
-    }
-}
+basic_store_item!(Pin, pin);
 
 impl super::Fetchable for Pin {
     async fn fetch<'a>(

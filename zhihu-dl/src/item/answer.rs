@@ -81,14 +81,7 @@ impl HasId for Answer {
         self.info.id
     }
 }
-impl BasicStoreItem for Answer {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.answer.contains(&id)
-    }
-    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.answer.insert(self.info.id);
-    }
-}
+basic_store_item!(Answer, answer);
 
 #[derive(Deserialize)]
 struct ReplyQuestion {

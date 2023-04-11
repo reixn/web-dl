@@ -19,13 +19,16 @@ pub mod element {
     pub use self::{author::Author, comment::Comment, content::Content};
 }
 
+#[macro_use]
+pub mod store;
+
 pub mod driver;
 pub mod item;
 pub mod meta;
 pub mod progress;
 pub mod raw_data;
 pub mod request;
-pub mod store;
+
 pub mod util {
     pub mod relative_path;
 }

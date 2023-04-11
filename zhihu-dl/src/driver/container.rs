@@ -163,7 +163,7 @@ impl Driver {
         IC: ItemContainer<O, I>,
         P: progress::Reporter,
     {
-        if IC::in_store(id, &self.store.containers) {
+        if IC::in_store(id, &self.store) {
             Ok(None)
         } else {
             let p = prog.start_item_container::<I, O, IC, _, _>("Getting", "", id, config);
@@ -207,7 +207,7 @@ impl Driver {
         Pat: AsRef<Path>,
     {
         let canon_dest = prepare_dest(dest.as_ref()).map_err(ContainerError::from)?;
-        let (ret, store_path) = if IC::in_store(id, &self.store.containers) {
+        let (ret, store_path) = if IC::in_store(id, &self.store) {
             (None, self.store.container_store_path::<IC, O, I>(id))
         } else {
             let p = prog.start_item_container::<I, O, IC, _, _>("Downloading", "", id, config);

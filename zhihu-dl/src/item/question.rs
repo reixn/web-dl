@@ -7,7 +7,7 @@ use crate::{
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
-    store::{self, BasicStoreItem, StoreItemContainer},
+    store::{BasicStoreItem, StoreItemContainer},
 };
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
@@ -74,14 +74,7 @@ impl HasId for Question {
         self.info.id
     }
 }
-impl BasicStoreItem for Question {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.question.contains(&id)
-    }
-    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.question.insert(self.info.id);
-    }
-}
+basic_store_item!(Question, question);
 impl HasComment for Question {
     fn has_comment(&self) -> bool {
         self.info.has_comment
@@ -170,11 +163,11 @@ mod param;
 impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for Question {
     const OPTION_NAME: &'static str = "answer";
     type ItemList = BTreeSet<super::answer::AnswerId>;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.question.contains(&id)
+    fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
+        store.objects.question.get(&id).map_or(false, |v| v.answer)
     }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.question.insert(id);
+    fn add_info(id: Self::Id<'_>, store: &mut crate::store::Store) {
+        store.objects.question.entry(id).or_default().answer = true;
     }
     fn add_item(id: <super::answer::Answer as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(id);

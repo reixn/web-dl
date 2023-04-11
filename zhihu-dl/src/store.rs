@@ -12,7 +12,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fmt::Display,
     fs, io,
     marker::PhantomData,
@@ -66,26 +66,42 @@ pub enum StoreError {
     },
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct ObjectInfo {
-    pub(crate) answer: BTreeSet<AnswerId>,
-    pub(crate) article: BTreeSet<ArticleId>,
-    pub(crate) collection: BTreeSet<CollectionId>,
-    pub(crate) column: BTreeSet<ColumnId>,
-    pub(crate) pin: BTreeSet<PinId>,
-    pub(crate) question: BTreeSet<QuestionId>,
-    pub(crate) user: BTreeSet<UserId>,
-}
-
-pub(crate) mod container {
+pub(crate) mod info {
+    use crate::{
+        element::author::UserId,
+        item::{AnswerId, ArticleId, CollectionId, ColumnId, PinId, QuestionId},
+    };
     use serde::{Deserialize, Serialize};
+    use std::collections::BTreeMap;
 
     #[derive(Debug, Default, Serialize, Deserialize)]
+    pub struct Answer {
+        pub container: bool,
+    }
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    pub struct Article {
+        pub container: bool,
+    }
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    pub struct Collection {
+        pub container: bool,
+        pub item: bool,
+    }
+    #[derive(Debug, Default, Serialize, Deserialize)]
     pub struct Column {
+        pub container: bool,
         pub item: bool,
         pub pinned_item: bool,
     }
-
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    pub struct Pin {
+        pub container: bool,
+    }
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    pub struct Question {
+        pub container: bool,
+        pub answer: bool,
+    }
     #[derive(Debug, Default, Serialize, Deserialize)]
     pub struct UserCollection {
         pub created: bool,
@@ -93,6 +109,7 @@ pub(crate) mod container {
     }
     #[derive(Debug, Default, Serialize, Deserialize)]
     pub struct User {
+        pub container: bool,
         pub activity: bool,
         pub answer: bool,
         pub article: bool,
@@ -101,14 +118,18 @@ pub(crate) mod container {
         pub pin: bool,
         pub question: bool,
     }
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    pub struct Info {
+        pub answer: BTreeMap<AnswerId, Answer>,
+        pub article: BTreeMap<ArticleId, Article>,
+        pub collection: BTreeMap<CollectionId, Collection>,
+        pub column: BTreeMap<ColumnId, Column>,
+        pub pin: BTreeMap<PinId, Pin>,
+        pub question: BTreeMap<QuestionId, Question>,
+        pub user: BTreeMap<UserId, User>,
+    }
 }
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct ContainerInfo {
-    pub(crate) collection: BTreeSet<CollectionId>,
-    pub(crate) column: BTreeMap<ColumnId, container::Column>,
-    pub(crate) question: BTreeSet<QuestionId>,
-    pub(crate) user: BTreeMap<UserId, container::User>,
-}
+pub use info::Info as ObjectInfo;
 
 fn load_yaml<V: serde::de::DeserializeOwned, F: FnOnce() -> V, P: AsRef<Path>>(
     path: P,
@@ -156,6 +177,18 @@ fn item_path<I: HasId, P: AsRef<Path>>(id: I::Id<'_>, path: P) -> PathBuf {
 pub trait BasicStoreItem: HasId + storable::Storable {
     fn in_store(id: Self::Id<'_>, info: &ObjectInfo) -> bool;
     fn add_info(&self, info: &mut ObjectInfo);
+}
+macro_rules! basic_store_item {
+    ($t:ty, $i:ident) => {
+        impl BasicStoreItem for $t {
+            fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
+                info.$i.get(&id).map_or(false, |v| v.container)
+            }
+            fn add_info(&self, info: &mut crate::store::ObjectInfo) {
+                info.$i.entry(self.id()).or_default().container = true;
+            }
+        }
+    };
 }
 
 const ITEM_LIST: &str = "item_list.yaml";
@@ -206,7 +239,7 @@ impl<'a, 'b, IC: 'b + StoreItemContainer<O, I>, O, I: StoreItem> Container<'a, '
         }
     }
     pub(crate) fn finish(self) -> Result<PathBuf, StoreError> {
-        IC::add_info(self.id, &mut self.store.containers);
+        IC::add_info(self.id, self.store);
         store_yaml(&self.item_list, &self.root, ITEM_LIST)?;
         Ok(self.root)
     }
@@ -217,13 +250,11 @@ pub struct Store {
     version: Version,
     dirty: bool,
     root: PathBuf,
-    objects: ObjectInfo,
-    pub(crate) containers: ContainerInfo,
+    pub(crate) objects: ObjectInfo,
     media_storer: media::Storer,
     media_loader: media::Loader,
 }
 const OBJECT_INFO: &str = "objects.yaml";
-const CONTAINER_INFO: &str = "container.yaml";
 const IMAGE_DIR: &str = "images";
 const VERSION_FILE: &str = "version.yaml";
 impl Store {
@@ -249,11 +280,6 @@ impl Store {
             objects: {
                 let ret = ObjectInfo::default();
                 store_yaml(&ret, path.as_path(), OBJECT_INFO)?;
-                ret
-            },
-            containers: {
-                let ret = ContainerInfo::default();
-                store_yaml(&ret, path.as_path(), CONTAINER_INFO)?;
                 ret
             },
             media_storer: media::Storer::new({
@@ -286,7 +312,6 @@ impl Store {
         Ok(Self {
             version,
             objects: load_yaml(&path, ObjectInfo::default, OBJECT_INFO)?,
-            containers: load_yaml(&path, ContainerInfo::default, CONTAINER_INFO)?,
             dirty: false,
             media_storer: media::Storer::new(&media_dir),
             media_loader: media::Loader::new(media_dir),
@@ -343,6 +368,114 @@ impl Store {
                 })?;
             }
         }
+        #[derive(Debug, Default, Serialize, Deserialize)]
+        pub struct ObjectInfo {
+            pub(crate) answer: BTreeSet<AnswerId>,
+            pub(crate) article: BTreeSet<ArticleId>,
+            pub(crate) collection: BTreeSet<CollectionId>,
+            pub(crate) column: BTreeSet<ColumnId>,
+            pub(crate) pin: BTreeSet<PinId>,
+            pub(crate) question: BTreeSet<QuestionId>,
+            pub(crate) user: BTreeSet<UserId>,
+        }
+        let old_info: ObjectInfo = load_yaml(&path, ObjectInfo::default, OBJECT_INFO)?;
+        store_yaml(
+            &info::Info {
+                answer: old_info
+                    .answer
+                    .into_iter()
+                    .map(|i| {
+                        (
+                            i,
+                            info::Answer {
+                                container: true,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+                article: old_info
+                    .article
+                    .into_iter()
+                    .map(|i| {
+                        (
+                            i,
+                            info::Article {
+                                container: true,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+                collection: old_info
+                    .collection
+                    .into_iter()
+                    .map(|i| {
+                        (
+                            i,
+                            info::Collection {
+                                container: true,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+                column: old_info
+                    .column
+                    .into_iter()
+                    .map(|i| {
+                        (
+                            i,
+                            info::Column {
+                                container: true,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+                pin: old_info
+                    .pin
+                    .into_iter()
+                    .map(|i| {
+                        (
+                            i,
+                            info::Pin {
+                                container: true,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+                question: old_info
+                    .question
+                    .into_iter()
+                    .map(|i| {
+                        (
+                            i,
+                            info::Question {
+                                container: true,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+                user: old_info
+                    .user
+                    .into_iter()
+                    .map(|i| {
+                        (
+                            i,
+                            info::User {
+                                container: true,
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+            &path,
+            OBJECT_INFO,
+        )?;
         store_yaml(&VERSION, path, VERSION_FILE)
     }
 
@@ -358,7 +491,6 @@ impl Store {
     pub fn save(&mut self) -> Result<(), StoreError> {
         store_yaml(&self.version, &self.root, VERSION_FILE)?;
         store_yaml(&self.objects, &self.root, OBJECT_INFO)?;
-        store_yaml(&self.containers, &self.root, CONTAINER_INFO)?;
         self.dirty = false;
         Ok(())
     }
@@ -480,7 +612,7 @@ impl<I: BasicStoreItem> StoreItem for I {
 pub trait StoreItemContainer<O, I: HasId>: HasId {
     const OPTION_NAME: &'static str;
     type ItemList: Default + Serialize + serde::de::DeserializeOwned;
-    fn in_store(id: Self::Id<'_>, info: &ContainerInfo) -> bool;
-    fn add_info(id: Self::Id<'_>, info: &mut ContainerInfo);
+    fn in_store(id: Self::Id<'_>, store: &Store) -> bool;
+    fn add_info(id: Self::Id<'_>, store: &mut Store);
     fn add_item(id: I::Id<'_>, list: &mut Self::ItemList);
 }

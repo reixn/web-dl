@@ -12,7 +12,7 @@ use crate::{
     },
     raw_data::{self, RawData, StrU64},
     request::Zse96V3,
-    store::{self, LinkInfo, Store, StoreItem, StoreItemContainer},
+    store::{LinkInfo, Store, StoreItem, StoreItemContainer},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -292,12 +292,7 @@ pub struct ActivityList {
 impl StoreItemContainer<VoidOpt, Activity> for super::User {
     const OPTION_NAME: &'static str = "item";
     type ItemList = ActivityList;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.activity)
-    }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.user.entry(id.0).or_default().activity = true;
-    }
+    container_info!(activity);
     fn add_item(id: <Activity as HasId>::Id<'_>, list: &mut Self::ItemList) {
         match id.target {
             ActTargetId::Answer(a) => {

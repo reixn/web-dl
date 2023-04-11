@@ -78,14 +78,7 @@ impl HasId for Article {
         self.info.id
     }
 }
-impl BasicStoreItem for Article {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.article.contains(&id)
-    }
-    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.article.insert(self.info.id);
-    }
-}
+basic_store_item!(Article, article);
 
 impl Article {
     async fn send_request(

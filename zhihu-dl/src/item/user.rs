@@ -6,7 +6,7 @@ use crate::{
     progress,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
-    store::{self, BasicStoreItem, StoreItemContainer},
+    store::{BasicStoreItem, StoreItemContainer},
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -63,10 +63,10 @@ impl HasId for User {
 }
 impl BasicStoreItem for User {
     fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.user.contains(&id.0)
+        info.user.get(&id.0).map_or(false, |v| v.container)
     }
     fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.user.insert(self.info.id);
+        info.user.entry(self.info.id).or_default().container = true;
     }
 }
 
@@ -146,15 +146,21 @@ impl super::Item for User {
 
 mod param;
 
+macro_rules! container_info {
+    ($($i:ident).+) => {
+        fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
+            store.objects.user.get(&id.0).map_or(false, |v| v$(.$i)+)
+        }
+        fn add_info(id: Self::Id<'_>, store: &mut crate::store::Store) {
+            store.objects.user.entry(id.0).or_default()$(.$i)+ = true;
+        }
+    };
+}
+
 impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for User {
     const OPTION_NAME: &'static str = "answer";
     type ItemList = BTreeSet<super::answer::AnswerId>;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.answer)
-    }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.user.entry(id.0).or_default().answer = true;
-    }
+    container_info!(answer);
     fn add_item(id: <super::answer::Answer as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(id);
     }
@@ -181,12 +187,7 @@ impl super::ItemContainer<super::VoidOpt, super::answer::Answer> for User {
 impl StoreItemContainer<super::VoidOpt, super::article::Article> for User {
     const OPTION_NAME: &'static str = "article";
     type ItemList = BTreeSet<super::article::ArticleId>;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.article)
-    }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.user.entry(id.0).or_default().article = true;
-    }
+    container_info!(article);
     fn add_item(id: <super::article::Article as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(id);
     }
@@ -221,12 +222,7 @@ impl super::ItemContainer<super::VoidOpt, super::article::Article> for User {
 impl StoreItemContainer<super::VoidOpt, super::column::Column> for User {
     const OPTION_NAME: &'static str = "column";
     type ItemList = BTreeSet<super::column::ColumnId>;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.column)
-    }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.user.entry(id.0).or_default().column = true;
-    }
+    container_info!(column);
     fn add_item(id: <super::column::Column as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(super::column::ColumnId(id.0.to_owned()));
     }
@@ -266,12 +262,7 @@ pub struct Created;
 impl StoreItemContainer<Created, super::collection::Collection> for User {
     const OPTION_NAME: &'static str = "created-collection";
     type ItemList = BTreeSet<super::collection::CollectionId>;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.collection.created)
-    }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.user.entry(id.0).or_default().collection.created = true;
-    }
+    container_info!(collection.created);
     fn add_item(id: <super::collection::Collection as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(id);
     }
@@ -299,12 +290,7 @@ pub struct Liked;
 impl StoreItemContainer<Liked, super::collection::Collection> for User {
     const OPTION_NAME: &'static str = "liked-collection";
     type ItemList = BTreeSet<super::collection::CollectionId>;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.collection.liked)
-    }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.user.entry(id.0).or_default().collection.liked = true;
-    }
+    container_info!(collection.liked);
     fn add_item(id: <super::collection::Collection as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(id);
     }
@@ -335,12 +321,7 @@ impl super::ItemContainer<Liked, super::collection::Collection> for User {
 impl StoreItemContainer<super::VoidOpt, super::pin::Pin> for User {
     const OPTION_NAME: &'static str = "pin";
     type ItemList = BTreeSet<super::pin::PinId>;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.pin)
-    }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.user.entry(id.0).or_default().pin = true;
-    }
+    container_info!(pin);
     fn add_item(id: <super::pin::Pin as HasId>::Id<'_>, list: &mut Self::ItemList) {
         list.insert(id);
     }

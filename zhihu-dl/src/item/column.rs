@@ -3,7 +3,7 @@ use crate::{
     element::{comment::HasComment, content::HasContent, Author, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
-    store::{self, BasicStoreItem, StoreItemContainer},
+    store::{BasicStoreItem, StoreItemContainer},
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
@@ -85,10 +85,13 @@ impl HasId for Column {
 }
 impl BasicStoreItem for Column {
     fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.column.contains(id.0)
+        info.column.get(id.0).map_or(false, |v| v.container)
     }
     fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.column.insert(self.info.id.clone());
+        info.column
+            .entry(self.info.id.clone())
+            .or_default()
+            .container = true;
     }
 }
 
@@ -193,11 +196,13 @@ pub struct Regular;
 impl StoreItemContainer<Regular, super::any::Any> for Column {
     const OPTION_NAME: &'static str = "item";
     type ItemList = any::AnyList;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.column.get(id.0).map_or(false, |v| v.item)
+    fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
+        store.objects.column.get(id.0).map_or(false, |v| v.item)
     }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.column
+    fn add_info(id: Self::Id<'_>, store: &mut crate::store::Store) {
+        store
+            .objects
+            .column
             .entry(ColumnId(id.0.to_string()))
             .or_default()
             .item = true;
@@ -225,11 +230,17 @@ pub struct Pinned;
 impl StoreItemContainer<Pinned, super::any::Any> for Column {
     const OPTION_NAME: &'static str = "pinned-item";
     type ItemList = any::AnyList;
-    fn in_store(id: Self::Id<'_>, info: &store::ContainerInfo) -> bool {
-        info.column.get(id.0).map_or(false, |v| v.pinned_item)
+    fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
+        store
+            .objects
+            .column
+            .get(id.0)
+            .map_or(false, |v| v.pinned_item)
     }
-    fn add_info(id: Self::Id<'_>, info: &mut store::ContainerInfo) {
-        info.column
+    fn add_info(id: Self::Id<'_>, store: &mut crate::store::Store) {
+        store
+            .objects
+            .column
             .entry(ColumnId(id.0.to_owned()))
             .or_default()
             .pinned_item = true;
