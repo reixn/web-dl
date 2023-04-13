@@ -130,76 +130,103 @@ pub struct Activity {
     pub target: ActTarget,
 }
 
+macro_rules! target {
+    ($f:tt, $e:expr, $($t:ident),+) => {
+        match $e {
+            $(ActTarget::$t(t) => $f!($t, t),)+
+            ActTarget::Other(_item) => $f!(_item)
+        }
+    };
+}
+macro_rules! targets {
+    ($f:tt, $e:expr) => {
+        target!($f, $e, Answer, Article, Collection, Column, Pin, Question)
+    };
+}
+
+macro_rules! id_target {
+    ($f:tt, $e:expr, $($t:ident),+) => {
+        match $e {
+            $(ActTargetId::$t(t) => $f!($t, t),)+
+            ActTargetId::Other(_item) => $f!(_item)
+        }
+    };
+}
+macro_rules! id_targets {
+    ($f:tt, $e:expr) => {
+        id_target!($f, $e, Answer, Article, Collection, Column, Pin, Question)
+    };
+}
+
 impl HasId for Activity {
     const TYPE: &'static str = "activity";
     type Id<'a> = ActivityId<'a>;
     fn id(&self) -> Self::Id<'_> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &self.target {
-                    $(ActTarget::$t(t) => ActivityId { id: self.id, target: ActTargetId::$t(t.id()) },)+
-                    ActTarget::Other(item) => ActivityId {id: self.id, target: ActTargetId::Other(item)}
-                }
+        macro_rules! id_v {
+            ($i:tt) => {
+                ActTargetId::Other($i)
+            };
+            ($t:tt, $i:tt) => {
+                ActTargetId::$t($i.id())
             };
         }
-        target!(Answer, Article, Collection, Column, Pin, Question)
+        ActivityId {
+            id: self.id,
+            target: targets!(id_v, &self.target),
+        }
     }
 }
 
 impl StoreItem for Activity {
     fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> crate::store::info::ItemInfo {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => <$t as StoreItem>::in_store(t, store),)+
-                    ActTargetId::Other(_) => Default::default()
-                }
+        macro_rules! id_v {
+            ($i:tt) => {
+                Default::default()
+            };
+            ($t:tt, $i:tt) => {
+                <$t as StoreItem>::in_store($i, store)
             };
         }
-        target!(Answer, Article, Collection, Column, Question, Pin)
+        id_targets!(id_v, id.target)
     }
     fn add_info(id: Self::Id<'_>, info: crate::store::info::ItemInfo, store: &mut Store) {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => <$t as StoreItem>::add_info(t, info, store),)+
-                    ActTargetId::Other(_) => ()
-                }
+        macro_rules! id_v {
+            ($i:tt) => {
+                ()
+            };
+            ($t:tt, $i:tt) => {
+                <$t as StoreItem>::add_info($i, info, store)
             };
         }
-        target!(Answer, Article, Collection, Column, Question, Pin)
+        id_targets!(id_v, id.target)
     }
     fn link_info<P: AsRef<Path>>(id: Self::Id<'_>, store: &Store, dest: P) -> Option<LinkInfo> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => $t::link_info(t, store, dest),)+
-                    ActTargetId::Other(it) => {
-                        it.warn();
-                        None
-                    }
-                }
+        macro_rules! id_v {
+            ($i:tt) => {{
+                $i.warn();
+                None
+            }};
+            ($t:tt, $i:tt) => {
+                $t::link_info($i, store, dest)
             };
         }
-        target!(Answer, Article, Collection, Column, Question, Pin)
+        id_targets!(id_v, id.target)
     }
     fn save_data(
         &self,
         on_server: bool,
         store: &mut Store,
     ) -> Result<Option<PathBuf>, web_dl_base::storable::Error> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &self.target {
-                    $(ActTarget::$t(t) => t.save_data(on_server, store),)+
-                    ActTarget::Other(it) => {
-                        it.warn();
-                        Ok(None)
-                    }
-                }
+        macro_rules! id_v {
+            ($i:tt) => {{
+                $i.warn();
+                Ok(None)
+            }};
+            ($t:tt, $i:tt) => {
+                $i.save_data(on_server, store)
             };
         }
-        target!(Answer, Article, Collection, Column, Question, Pin)
+        targets!(id_v, &self.target)
     }
     fn save_data_link<P: AsRef<Path>>(
         &self,
@@ -207,18 +234,16 @@ impl StoreItem for Activity {
         store: &mut crate::store::Store,
         dest: P,
     ) -> Result<Option<LinkInfo>, web_dl_base::storable::Error> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &self.target {
-                    $(ActTarget::$t(t) => t.save_data_link(on_server, store, dest),)+
-                    ActTarget::Other(it) => {
-                        it.warn();
-                        Ok(None)
-                    }
-                }
+        macro_rules! id_v {
+            ($i:tt) => {{
+                $i.warn();
+                Ok(None)
+            }};
+            ($t:tt, $i:tt) => {
+                $i.save_data_link(on_server, store, dest)
             };
         }
-        target!(Answer, Article, Collection, Column, Question, Pin)
+        targets!(id_v, &self.target)
     }
 }
 
@@ -246,15 +271,15 @@ impl Item for Activity {
         client: &crate::request::Client,
         prog: &P,
     ) -> bool {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &mut self.target {
-                    $(ActTarget::$t(t) => t.get_images(client, prog).await,)+
-                    ActTarget::Other { .. } => false
-                }
+        macro_rules! id_v {
+            ($i:tt) => {
+                false
+            };
+            ($t:tt, $i:tt) => {
+                $i.get_images(client, prog).await
             };
         }
-        target!(Answer, Article, Collection, Column, Pin, Question)
+        targets!(id_v, &mut self.target)
     }
 }
 
@@ -267,118 +292,133 @@ pub enum ActivityComCont<'a, 'b> {
     Question(CH<'a, 'b, Question>),
     Other,
 }
+macro_rules! container_target {
+    ($f:ident, $other:expr, $e:expr, $($t:ident),+) => {
+        match $e {
+            $(Self::$t(t) => $f!(t),)+
+            Self::Other => $other
+        }
+    };
+}
+macro_rules! container_targets {
+    ($f:ident, $other:expr, $e:expr) => {
+        container_target!($f, $other, $e, Answer, Article, Collection, Pin, Question)
+    };
+}
 impl<'a, 'b> ContainerHandle<comment::Comment> for ActivityComCont<'a, 'b> {
     fn link_item(
         &mut self,
         id: <comment::Comment as HasId>::Id<'_>,
     ) -> Result<(), crate::store::StoreError> {
-        match self {
-            Self::Answer(a) => a.link_item(id),
-            Self::Article(a) => a.link_item(id),
-            Self::Collection(a) => a.link_item(id),
-            Self::Pin(a) => a.link_item(id),
-            Self::Question(a) => a.link_item(id),
-            Self::Other => Ok(()),
+        macro_rules! v {
+            ($t:ident) => {
+                $t.link_item(id)
+            };
         }
+        container_targets!(v, Ok(()), self)
     }
     fn mark_missing(&mut self) {
-        match self {
-            Self::Answer(a) => a.mark_missing(),
-            Self::Article(a) => a.mark_missing(),
-            Self::Collection(c) => c.mark_missing(),
-            Self::Pin(p) => p.mark_missing(),
-            Self::Question(q) => q.mark_missing(),
-            Self::Other => (),
+        macro_rules! v {
+            ($t:ident) => {
+                $t.mark_missing()
+            };
         }
+        container_targets!(v, (), self)
     }
     fn finish(self) -> Result<Option<PathBuf>, crate::store::StoreError> {
-        match self {
-            Self::Answer(a) => a.finish(),
-            Self::Article(a) => a.finish(),
-            Self::Collection(a) => a.finish(),
-            Self::Pin(a) => a.finish(),
-            Self::Question(a) => a.finish(),
-            Self::Other => Ok(None),
+        macro_rules! v {
+            ($t:ident) => {
+                $t.finish()
+            };
         }
+        container_targets!(v, Ok(None), self)
     }
 }
+
+macro_rules! call_fun {
+    ($t:ident, $v:ident, $tr:tt, $f:ident, ($($a:tt),*)) => {
+        <$t as $tr<VoidOpt, comment::Comment>>::$f($v, $($a,)*)
+    };
+}
+macro_rules! id_target {
+    ($other:expr, $e:expr, $tr:tt, $f:ident, $a:tt, $($t:ident),+) => {
+        match $e {
+            $(ActTargetId::$t(t) => call_fun!($t, t, $tr, $f, $a),)+
+            _ => $other
+        }
+    };
+}
+macro_rules! id_targets {
+    ($other:expr, $e:expr, $tr:tt, $f:ident, $a:tt) => {
+        id_target!($other, $e, $tr, $f, $a, Answer, Article, Collection, Pin, Question)
+    };
+}
+
 impl StoreContainer<VoidOpt, comment::Comment> for Activity {
     const OPTION_NAME: &'static str = "comment";
     fn in_store(id: Self::Id<'_>, store: &Store) -> bool {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => <$t as StoreContainer<VoidOpt, comment::Comment>>::in_store(t, store),)+
-                    _ => true
-                }
-            };
-        }
-        target!(Answer, Article, Collection, Pin, Question)
+        id_targets!(true, id.target, StoreContainer, in_store, (store))
     }
     fn store_path(id: Self::Id<'_>, store: &Store) -> Option<PathBuf> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => <$t as StoreContainer<VoidOpt, comment::Comment>>::store_path(t, store),)+
-                    _ => None
-                }
-            };
-        }
-        target!(Answer, Article, Collection, Pin, Question)
+        id_targets!(None, id.target, StoreContainer, store_path, (store))
     }
     type Handle<'a, 'b> = ActivityComCont<'a, 'b>;
     fn save_data<'a, 'b>(
         id: Self::Id<'a>,
         store: &'b mut Store,
     ) -> Result<Self::Handle<'a, 'b>, crate::store::StoreError> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => ActivityComCont::$t(<$t as StoreContainer<VoidOpt, comment::Comment>>::save_data(t, store)?),)+
-                    _ => ActivityComCont::Other
-                }
+        macro_rules! call_fun {
+            ($t:ident, $v:ident, $tr:tt, $f:ident, $a:tt) => {
+                ActivityComCont::$t(<$t as $tr<VoidOpt, comment::Comment>>::$f($v, store)?)
             };
         }
-        Ok(target!(Answer, Article, Collection, Pin, Question))
+        Ok(id_targets!(
+            ActivityComCont::Other,
+            id.target,
+            StoreContainer,
+            save_data,
+            ()
+        ))
     }
+}
+
+macro_rules! target {
+    ($other:expr, $e:expr, $tr:ident, $f:ident, $a:tt, $($t:ident),+) => {
+        match $e {
+            $(ActTarget::$t(t) => call_fun!($t, t, $tr, $f, $a),)+
+            _ => $other
+        }
+    };
+}
+macro_rules! targets {
+    ($other:expr, $e:expr, $t:ident, $f:ident, $a:tt) => {
+        target!($other, $e, $t, $f, $a, Answer, Article, Collection, Pin, Question)
+    };
 }
 impl ItemContainer<VoidOpt, comment::Comment> for Activity {
     fn has_item(&self) -> bool {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &self.target {
-                    $(ActTarget::$t(t) => <$t as ItemContainer<VoidOpt, comment::Comment>>::has_item(t),)+
-                    _ => false
-                }
-            };
-        }
-        target!(Answer, Article, Collection, Pin, Question)
+        targets!(false, &self.target, ItemContainer, has_item, ())
     }
     fn set_info(&self, has_item: bool) {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match &self.target {
-                    $(ActTarget::$t(t) => <$t as ItemContainer<VoidOpt, comment::Comment>>::set_info(t, has_item),)+
-                    _ => ()
-                }
-            };
-        }
-        target!(Answer, Article, Collection, Pin, Question)
+        targets!((), &self.target, ItemContainer, set_info, (has_item))
     }
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,
         id: Self::Id<'a>,
     ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
-        macro_rules! target {
-            ($($t:ident),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => <$t as ItemContainer<VoidOpt,comment::Comment>>::fetch_items(client, prog, t).await,)+
-                    _ => Ok(Default::default())
-                }
+        macro_rules! call_fun {
+            ($t:ident, $v:ident, $tr:tt, $f:ident, $a:tt) => {
+                <$t as $tr<VoidOpt, comment::Comment>>::$f(client, prog, $v).await
             };
         }
-        target!(Answer, Article, Collection, Pin, Question)
+        id_targets!(
+            Ok(Default::default()),
+            id.target,
+            ItemContainer,
+            fetch_items,
+            ()
+        )
     }
 }
 
@@ -391,42 +431,35 @@ pub struct ActivityList {
     pub pin: BTreeSet<pin::PinId>,
     pub question: BTreeSet<question::QuestionId>,
 }
+macro_rules! list_target {
+    ($e:expr, $s:expr, $f:ident, $(($t:ident, $v:ident)),+) => {
+        match $e {
+            $(ActTargetId::$t(t) => ItemList::<$t>::$f(&mut $s.$v, t),)+
+            ActTargetId::Other(_) => ()
+        }
+    };
+}
+macro_rules! list_targets {
+    ($e:expr, $s:expr, $f:ident) => {
+        list_target!(
+            $e,
+            $s,
+            $f,
+            (Answer, answer),
+            (Article, article),
+            (Column, column),
+            (Collection, collection),
+            (Pin, pin),
+            (Question, question)
+        )
+    };
+}
 impl ItemList<Activity> for ActivityList {
     fn insert(&mut self, id: <Activity as HasId>::Id<'_>) {
-        macro_rules! target {
-            ($(($t:ident, $v:ident)),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => ItemList::<$t>::insert(&mut self.$v, t),)+
-                    ActTargetId::Other(_) => ()
-                }
-            };
-        }
-        target!(
-            (Answer, answer),
-            (Article, article),
-            (Column, column),
-            (Collection, collection),
-            (Pin, pin),
-            (Question, question)
-        )
+        list_targets!(id.target, self, insert)
     }
     fn remove(&mut self, id: <Activity as HasId>::Id<'_>) {
-        macro_rules! target {
-            ($(($t:ident, $v:ident)),+) => {
-                match id.target {
-                    $(ActTargetId::$t(t) => ItemList::<$t>::remove(&mut self.$v, t),)+
-                    ActTargetId::Other(_) => ()
-                }
-            };
-        }
-        target!(
-            (Answer, answer),
-            (Article, article),
-            (Column, column),
-            (Collection, collection),
-            (Pin, pin),
-            (Question, question)
-        )
+        list_targets!(id.target, self, remove)
     }
     fn set_item_info(&self, info: crate::store::info::ItemInfo, store: &mut Store) {
         macro_rules! target {
