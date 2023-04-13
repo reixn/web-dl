@@ -95,6 +95,9 @@ impl ItemJob for Silent {
 impl ContainerJob for Silent {
     fn finish<I: Display>(self, _: &str, _: Option<usize>, _: I) {}
 }
+impl OtherJob for Silent {
+    fn finish<I>(self, _: &str, _: I) {}
+}
 
 impl Reporter for Silent {
     type ItemRep<'a> = Silent;
@@ -114,4 +117,9 @@ impl Reporter for Silent {
         Silent
     }
     fn link_container<II, IO, IC, I, P>(&self, _: I, _: P) {}
+
+    type JobRep<'a> = Silent;
+    fn start_job<I>(&self, _: &str, _: I) -> Self::JobRep<'_> {
+        Silent
+    }
 }

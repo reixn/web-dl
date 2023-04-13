@@ -8,12 +8,11 @@ use std::{
     fs,
     io::{self, Seek},
     path::PathBuf,
-    time::SystemTime,
 };
 use termcolor::{BufferedStandardStream, Color};
 use zhihu_dl::{
     driver::{manifest::Manifest, Driver},
-    progress::progress_bar::ProgressReporter,
+    progress::{progress_bar::ProgressReporter, OtherJob, Reporter},
     store,
 };
 
@@ -72,12 +71,7 @@ impl ManifestOper {
                 );
             }
             Self::Apply { path } => {
-                let st = SystemTime::now();
-                output.write_tagged(
-                    Color::Cyan,
-                    "Applying",
-                    format_args_nl!("manifest {}", path),
-                );
+                let job = reporter.start_job("Applying", format_args!("manifest {}", path));
                 driver
                     .apply_manifest(
                         reporter,
@@ -90,22 +84,12 @@ impl ManifestOper {
                     )
                     .await
                     .context("failed to apply manifest")?;
-                output.write_tagged(
-                    Color::Green,
-                    "Applied",
-                    format_args_nl!(
-                        "manifest {} took {}",
-                        path,
-                        HumanDuration(SystemTime::now().duration_since(st).unwrap())
-                    ),
-                );
+                job.finish("Applied", format_args!("manifest {}", path,));
             }
             Self::Link { path } => {
-                let st = SystemTime::now();
-                output.write_tagged(
-                    Color::Cyan,
+                let job = reporter.start_job(
                     "Creating",
-                    format_args_nl!("symbol links according to manifest {}", path),
+                    format_args!("symbol links according to manifest {}", path),
                 );
                 driver
                     .link_manifest(
@@ -120,14 +104,9 @@ impl ManifestOper {
                     .with_context(|| {
                         format!("failed to create symbol links according to {}", path)
                     })?;
-                output.write_tagged(
-                    Color::Green,
+                job.finish(
                     "Created",
-                    format_args_nl!(
-                        "symbol links according to {} took {}",
-                        path,
-                        HumanDuration(SystemTime::now().duration_since(st).unwrap())
-                    ),
+                    format_args!("symbol links according to {}", path),
                 );
             }
         }
@@ -207,12 +186,7 @@ impl Command {
             Self::Container { cmd } => runtime.block_on(cmd.run(driver, prog))?,
             Self::Save => save_state(driver, output)?,
             Self::Command { file } => {
-                output.write_tagged(
-                    Color::Cyan,
-                    "Running",
-                    format_args_nl!("commands in {}", file),
-                );
-                let st = std::time::SystemTime::now();
+                let job = prog.start_job("Running", format_args!("commands in {}", file));
                 for (idx, s) in fs::read_to_string(&file)
                     .with_context(|| format!("failed to read {}", file))?
                     .lines()
@@ -228,15 +202,7 @@ impl Command {
                     .with_context(|| format!("{}:{}: failed to parse command", file, idx + 1))?
                     .run(runtime, driver, output, prog)?;
                 }
-                output.write_tagged(
-                    Color::Green,
-                    "Completed",
-                    format_args_nl!(
-                        "running commands in {} took {}",
-                        file,
-                        HumanDuration(std::time::SystemTime::now().duration_since(st).unwrap())
-                    ),
-                )
+                job.finish("Completed", format_args!("running commands in {}", file,))
             }
             Self::Manifest { operation } => {
                 runtime.block_on(operation.run(prog, output, driver))?

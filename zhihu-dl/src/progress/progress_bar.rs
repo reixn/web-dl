@@ -452,6 +452,33 @@ impl<'a> ContainerJob for Container<'a> {
         });
     }
 }
+
+pub struct Job<'a> {
+    multi_progress: &'a MultiProgress,
+    start_time: SystemTime,
+}
+impl<'a> Job<'a> {
+    fn new<I: Display>(multi_progress: &'a MultiProgress, operation: &str, msg: I) -> Self {
+        multi_progress.suspend(|| println!("{:>13} {}", Paint::cyan(operation), msg));
+        Self {
+            multi_progress,
+            start_time: SystemTime::now(),
+        }
+    }
+}
+impl<'a> OtherJob for Job<'a> {
+    fn finish<I: Display>(self, operation: &str, msg: I) {
+        self.multi_progress.suspend(|| {
+            println!(
+                "{:>13} {} took {}",
+                Paint::green(operation),
+                msg,
+                HumanDuration(SystemTime::now().duration_since(self.start_time).unwrap())
+            )
+        })
+    }
+}
+
 impl<'b> Reporter for Container<'b> {
     type ItemRep<'a> = Item<'a> where Self:'a;
     fn start_item<O: Display, I: Display>(
@@ -492,6 +519,11 @@ impl<'b> Reporter for Container<'b> {
         P: AsRef<Path>,
     {
         Container::link::<II, IO, IC, _, _>(self.multi_progress, id, dest)
+    }
+
+    type JobRep<'a> = Job<'a> where Self:'a;
+    fn start_job<I: Display>(&self, operation: &str, msg: I) -> Self::JobRep<'_> {
+        Job::new(self.multi_progress, operation, msg)
     }
 }
 
@@ -553,5 +585,10 @@ impl Reporter for ProgressReporter {
         P: AsRef<Path>,
     {
         Container::link::<II, IO, IC, I, P>(&self.multi_progress, id, dest)
+    }
+
+    type JobRep<'a> = Job<'a> where Self:'a;
+    fn start_job<I: Display>(&self, operation: &str, msg: I) -> Self::JobRep<'_> {
+        Job::new(&self.multi_progress, operation, msg)
     }
 }

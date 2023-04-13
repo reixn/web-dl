@@ -80,6 +80,9 @@ pub trait ItemJob: ItemProg {
 pub trait ContainerJob: ItemContainerProg {
     fn finish<I: Display>(self, operation: &str, num: Option<usize>, id: I);
 }
+pub trait OtherJob {
+    fn finish<I: Display>(self, operation: &str, msg: I);
+}
 pub trait Reporter: Progress {
     type ItemRep<'a>: ItemJob
     where
@@ -115,6 +118,11 @@ pub trait Reporter: Progress {
         IC: item::ItemContainer<IO, II>,
         I: Display,
         P: AsRef<Path>;
+
+    type JobRep<'a>: OtherJob
+    where
+        Self: 'a;
+    fn start_job<I: Display>(&self, operation: &str, msg: I) -> Self::JobRep<'_>;
 }
 
 pub mod progress_bar;
