@@ -69,47 +69,70 @@ pub enum StoreError {
 pub(crate) mod info {
     use crate::{
         element::author::UserId,
-        item::{AnswerId, ArticleId, CollectionId, ColumnId, PinId, QuestionId},
+        item::{AnswerId, ArticleId, CollectionId, ColumnId, CommentId, PinId, QuestionId},
     };
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
 
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+    pub struct ItemInfo {
+        pub in_store: bool,
+        pub on_server: bool,
+    }
+    impl Default for ItemInfo {
+        fn default() -> Self {
+            Self {
+                in_store: false,
+                on_server: true,
+            }
+        }
+    }
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct Answer {
-        pub container: bool,
+        pub container: ItemInfo,
+        pub comment: bool,
     }
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct Article {
-        pub container: bool,
+        pub container: ItemInfo,
+        pub comment: bool,
     }
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct Collection {
-        pub container: bool,
+        pub container: ItemInfo,
         pub item: bool,
+        pub comment: bool,
     }
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct Column {
-        pub container: bool,
+        pub container: ItemInfo,
         pub item: bool,
         pub pinned_item: bool,
     }
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+    pub struct Comment {
+        pub container: ItemInfo,
+        pub comment: bool,
+    }
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct Pin {
-        pub container: bool,
+        pub container: ItemInfo,
+        pub comment: bool,
     }
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct Question {
-        pub container: bool,
+        pub container: ItemInfo,
         pub answer: bool,
+        pub comment: bool,
     }
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct UserCollection {
         pub created: bool,
         pub liked: bool,
     }
-    #[derive(Debug, Default, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
     pub struct User {
-        pub container: bool,
+        pub container: ItemInfo,
         pub activity: bool,
         pub answer: bool,
         pub article: bool,
@@ -124,6 +147,7 @@ pub(crate) mod info {
         pub article: BTreeMap<ArticleId, Article>,
         pub collection: BTreeMap<CollectionId, Collection>,
         pub column: BTreeMap<ColumnId, Column>,
+        pub comment: BTreeMap<CommentId, Comment>,
         pub pin: BTreeMap<PinId, Pin>,
         pub question: BTreeMap<QuestionId, Question>,
         pub user: BTreeMap<UserId, User>,
@@ -175,74 +199,27 @@ fn item_path<I: HasId, P: AsRef<Path>>(id: I::Id<'_>, path: P) -> PathBuf {
     path
 }
 pub trait BasicStoreItem: HasId + storable::Storable {
-    fn in_store(id: Self::Id<'_>, info: &ObjectInfo) -> bool;
-    fn add_info(&self, info: &mut ObjectInfo);
+    fn in_store(id: Self::Id<'_>, store: &ObjectInfo) -> info::ItemInfo;
+    fn add_info(id: Self::Id<'_>, info: info::ItemInfo, store: &mut ObjectInfo);
 }
 macro_rules! basic_store_item {
     ($t:ty, $i:ident) => {
         impl BasicStoreItem for $t {
-            fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-                info.$i.get(&id).map_or(false, |v| v.container)
+            fn in_store(
+                id: Self::Id<'_>,
+                store: &crate::store::ObjectInfo,
+            ) -> crate::store::info::ItemInfo {
+                store.$i.get(&id).copied().unwrap_or_default().container
             }
-            fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-                info.$i.entry(self.id()).or_default().container = true;
+            fn add_info(
+                id: Self::Id<'_>,
+                info: crate::store::info::ItemInfo,
+                store: &mut crate::store::ObjectInfo,
+            ) {
+                store.$i.entry(id).or_default().container = info;
             }
         }
     };
-}
-
-const ITEM_LIST: &str = "item_list.yaml";
-pub struct Container<'a, 'b, IC: 'b + StoreItemContainer<O, I>, O, I: HasId> {
-    store: &'a mut Store,
-    root: PathBuf,
-    id: IC::Id<'b>,
-    item_list: IC::ItemList,
-    _o: PhantomData<O>,
-    _i: PhantomData<I>,
-}
-impl<'a, 'b, IC: 'b + StoreItemContainer<O, I>, O, I: StoreItem> Container<'a, 'b, IC, O, I> {
-    pub(crate) fn link_item(&mut self, id: I::Id<'_>) -> Result<(), StoreError> {
-        IC::add_item(id, &mut self.item_list);
-        if let Some(v) = I::link_info(id, &self.store, &self.root) {
-            if v.link.exists() {
-                return Ok(());
-            }
-            {
-                let parent = v.link.parent().unwrap();
-                if !parent.exists() {
-                    fs::create_dir_all(parent).map_err(|e| StoreError::Fs {
-                        op: FsErrorOp::CreateDir,
-                        path: parent.to_path_buf(),
-                        source: e,
-                    })?;
-                }
-            }
-            let mut source = PathBuf::new();
-            for _ in v
-                .link
-                .strip_prefix(&self.store.root)
-                .unwrap()
-                .parent()
-                .unwrap()
-                .components()
-            {
-                source.push("..");
-            }
-            source.extend(v.source.strip_prefix(&self.store.root).unwrap());
-            crate::util::relative_path::symlink(&source, &v.link).map_err(|e| StoreError::Fs {
-                op: FsErrorOp::SymLinkTo(v.source),
-                path: v.link,
-                source: e,
-            })
-        } else {
-            Ok(())
-        }
-    }
-    pub(crate) fn finish(self) -> Result<PathBuf, StoreError> {
-        IC::add_info(self.id, self.store);
-        store_yaml(&self.item_list, &self.root, ITEM_LIST)?;
-        Ok(self.root)
-    }
 }
 
 pub const VERSION: Version = Version { major: 1, minor: 0 };
@@ -269,13 +246,12 @@ impl Store {
             path: path.as_ref().to_path_buf(),
             source: e,
         })?;
-        let version = load_yaml(&path, || Version { major: 0, minor: 0 }, VERSION_FILE)?;
-        if !VERSION.is_compatible(version) {
-            return Err(StoreError::Version(version));
-        }
         let image_dir = path.join(IMAGE_DIR);
         Ok(Self {
-            version,
+            version: {
+                store_yaml(&VERSION, &path, VERSION_FILE)?;
+                VERSION
+            },
             dirty: false,
             objects: {
                 let ret = ObjectInfo::default();
@@ -379,6 +355,10 @@ impl Store {
             pub(crate) user: BTreeSet<UserId>,
         }
         let old_info: ObjectInfo = load_yaml(&path, ObjectInfo::default, OBJECT_INFO)?;
+        let ii = info::ItemInfo {
+            in_store: true,
+            on_server: true,
+        };
         store_yaml(
             &info::Info {
                 answer: old_info
@@ -388,7 +368,7 @@ impl Store {
                         (
                             i,
                             info::Answer {
-                                container: true,
+                                container: ii,
                                 ..Default::default()
                             },
                         )
@@ -401,7 +381,7 @@ impl Store {
                         (
                             i,
                             info::Article {
-                                container: true,
+                                container: ii,
                                 ..Default::default()
                             },
                         )
@@ -414,7 +394,7 @@ impl Store {
                         (
                             i,
                             info::Collection {
-                                container: true,
+                                container: ii,
                                 ..Default::default()
                             },
                         )
@@ -427,12 +407,13 @@ impl Store {
                         (
                             i,
                             info::Column {
-                                container: true,
+                                container: ii,
                                 ..Default::default()
                             },
                         )
                     })
                     .collect(),
+                comment: std::collections::BTreeMap::default(),
                 pin: old_info
                     .pin
                     .into_iter()
@@ -440,7 +421,7 @@ impl Store {
                         (
                             i,
                             info::Pin {
-                                container: true,
+                                container: ii,
                                 ..Default::default()
                             },
                         )
@@ -453,7 +434,7 @@ impl Store {
                         (
                             i,
                             info::Question {
-                                container: true,
+                                container: ii,
                                 ..Default::default()
                             },
                         )
@@ -466,7 +447,7 @@ impl Store {
                         (
                             i,
                             info::User {
-                                container: true,
+                                container: ii,
                                 ..Default::default()
                             },
                         )
@@ -498,7 +479,7 @@ impl Store {
     pub fn store_path<I: HasId>(&self, id: I::Id<'_>) -> PathBuf {
         item_path::<I, _>(id, &self.root)
     }
-    pub fn container_store_path<IC: StoreItemContainer<O, I>, O, I: HasId>(
+    pub fn container_store_path<IC: BasicStoreContainer<O, I>, O, I: HasId + 'static>(
         &self,
         id: IC::Id<'_>,
     ) -> PathBuf {
@@ -518,7 +499,7 @@ impl Store {
     pub fn get_media<I: media::HasImage>(&mut self, object: &mut I) -> Result<(), media::Error> {
         object.load_images(&mut self.media_loader)
     }
-    pub fn get_container<O, I: HasId, IC: StoreItemContainer<O, I>>(
+    pub fn get_container<O, I: HasId, IC: BasicStoreContainer<O, I>>(
         &self,
         id: IC::Id<'_>,
     ) -> Result<IC::ItemList, StoreError> {
@@ -534,18 +515,26 @@ impl Store {
     }
     pub fn add_object<I: BasicStoreItem>(
         &mut self,
+        on_server: bool,
         object: &I,
     ) -> Result<PathBuf, storable::Error> {
         let path = self.store_path::<I>(object.id());
         object.store(&path)?;
-        object.add_info(&mut self.objects);
+        I::add_info(
+            object.id(),
+            info::ItemInfo {
+                in_store: true,
+                on_server,
+            },
+            &mut self.objects,
+        );
         self.dirty = true;
         Ok(path)
     }
-    pub fn add_container<'a, 'b, IC: StoreItemContainer<O, I>, O, I: HasId>(
+    pub fn add_container<'a, 'b, IC: BasicStoreContainer<O, I>, O, I: HasId>(
         &'a mut self,
         id: IC::Id<'b>,
-    ) -> Result<Container<'a, 'b, IC, O, I>, StoreError> {
+    ) -> Result<Container<'b, 'a, IC, O, I>, StoreError> {
         let path = self.container_store_path::<IC, O, I>(id);
         let item_list = if !path.exists() {
             fs::create_dir_all(&path).map_err(|e| StoreError::Fs {
@@ -561,6 +550,7 @@ impl Store {
             store: self,
             root: path,
             id,
+            absent_list: item_list.clone(),
             item_list,
             _o: PhantomData,
             _i: PhantomData,
@@ -573,18 +563,24 @@ pub struct LinkInfo {
     pub(crate) link: PathBuf,
 }
 pub trait StoreItem: HasId {
-    fn in_store(id: Self::Id<'_>, store: &Store) -> bool;
+    fn in_store(id: Self::Id<'_>, store: &Store) -> info::ItemInfo;
+    fn add_info(id: Self::Id<'_>, info: info::ItemInfo, store: &mut Store);
     fn link_info<P: AsRef<Path>>(id: Self::Id<'_>, store: &Store, dest: P) -> Option<LinkInfo>;
-    fn save_data(&self, store: &mut Store) -> Result<Option<PathBuf>, storable::Error>;
+    fn save_data(
+        &self,
+        on_server: bool,
+        store: &mut Store,
+    ) -> Result<Option<PathBuf>, storable::Error>;
     fn save_data_link<P: AsRef<Path>>(
         &self,
+        on_server: bool,
         store: &mut Store,
         dest: P,
     ) -> Result<Option<LinkInfo>, storable::Error>;
 }
 
 impl<I: BasicStoreItem> StoreItem for I {
-    fn in_store(id: Self::Id<'_>, store: &Store) -> bool {
+    fn in_store(id: Self::Id<'_>, store: &Store) -> info::ItemInfo {
         <Self as BasicStoreItem>::in_store(id, &store.objects)
     }
     fn link_info<P: AsRef<Path>>(id: Self::Id<'_>, store: &Store, dest: P) -> Option<LinkInfo> {
@@ -593,15 +589,23 @@ impl<I: BasicStoreItem> StoreItem for I {
             link: item_path::<Self, _>(id, dest),
         })
     }
-    fn save_data(&self, store: &mut Store) -> Result<Option<PathBuf>, storable::Error> {
-        Ok(Some(store.add_object(self)?))
+    fn add_info(id: Self::Id<'_>, info: info::ItemInfo, store: &mut Store) {
+        <Self as BasicStoreItem>::add_info(id, info, &mut store.objects);
+    }
+    fn save_data(
+        &self,
+        on_server: bool,
+        store: &mut Store,
+    ) -> Result<Option<PathBuf>, storable::Error> {
+        Ok(Some(store.add_object(on_server, self)?))
     }
     fn save_data_link<P: AsRef<Path>>(
         &self,
+        on_server: bool,
         store: &mut Store,
         dest: P,
     ) -> Result<Option<LinkInfo>, storable::Error> {
-        let source = store.add_object(self)?;
+        let source = store.add_object(on_server, self)?;
         Ok(Some(LinkInfo {
             source,
             link: item_path::<Self, _>(self.id(), dest),
@@ -609,10 +613,148 @@ impl<I: BasicStoreItem> StoreItem for I {
     }
 }
 
-pub trait StoreItemContainer<O, I: HasId>: HasId {
+pub trait ItemList<I: HasId + 'static>:
+    Default + Clone + Serialize + serde::de::DeserializeOwned
+{
+    fn insert(&mut self, id: I::Id<'_>);
+    fn remove(&mut self, id: I::Id<'_>);
+    fn set_item_info(&self, info: info::ItemInfo, store: &mut Store);
+}
+macro_rules! item_list_btree {
+    ($t:ty, $i:ty) => {
+        impl crate::store::ItemList<$t> for std::collections::BTreeSet<$i> {
+            fn insert(&mut self, id: $i) {
+                self.insert(id);
+            }
+            fn remove(&mut self, id: $i) {
+                self.remove(&id);
+            }
+            fn set_item_info(
+                &self,
+                info: crate::store::info::ItemInfo,
+                store: &mut crate::store::Store,
+            ) {
+                for i in self.iter() {
+                    <$t as crate::store::StoreItem>::add_info(*i, info, store);
+                }
+            }
+        }
+    };
+}
+
+pub trait BasicStoreContainer<O, I: HasId + 'static>: HasId {
     const OPTION_NAME: &'static str;
-    type ItemList: Default + Serialize + serde::de::DeserializeOwned;
+    type ItemList: ItemList<I>;
     fn in_store(id: Self::Id<'_>, store: &Store) -> bool;
     fn add_info(id: Self::Id<'_>, store: &mut Store);
-    fn add_item(id: I::Id<'_>, list: &mut Self::ItemList);
+}
+
+pub trait ContainerHandle<I: HasId> {
+    fn link_item(&mut self, id: I::Id<'_>) -> Result<(), StoreError>;
+    fn mark_missing(&mut self);
+    fn finish(self) -> Result<Option<PathBuf>, StoreError>;
+}
+pub trait StoreContainer<O, I: HasId>: HasId + 'static {
+    const OPTION_NAME: &'static str;
+    fn in_store(id: Self::Id<'_>, store: &Store) -> bool;
+    fn store_path(id: Self::Id<'_>, store: &Store) -> Option<PathBuf>;
+    type Handle<'a, 'b>: ContainerHandle<I>;
+    fn save_data<'a, 'b>(
+        id: Self::Id<'a>,
+        store: &'b mut Store,
+    ) -> Result<Self::Handle<'a, 'b>, StoreError>;
+}
+
+const ITEM_LIST: &str = "item_list.yaml";
+pub struct Container<'a, 'b, IC: 'a + BasicStoreContainer<O, I>, O, I: HasId + 'static> {
+    store: &'b mut Store,
+    root: PathBuf,
+    id: IC::Id<'a>,
+    item_list: IC::ItemList,
+    absent_list: IC::ItemList,
+    _o: PhantomData<O>,
+    _i: PhantomData<I>,
+}
+impl<'a, 'b, IC: 'a + BasicStoreContainer<O, I>, O, I: HasId + 'static>
+    Container<'a, 'b, IC, O, I>
+{
+    pub(crate) fn finish_container(self) -> Result<PathBuf, StoreError> {
+        IC::add_info(self.id, self.store);
+        store_yaml(&self.item_list, &self.root, ITEM_LIST)?;
+        Ok(self.root)
+    }
+}
+impl<'a, 'b, IC: 'a + BasicStoreContainer<O, I>, O, I: StoreItem + 'static> ContainerHandle<I>
+    for Container<'a, 'b, IC, O, I>
+{
+    fn link_item(&mut self, id: I::Id<'_>) -> Result<(), StoreError> {
+        self.item_list.insert(id);
+        self.absent_list.remove(id);
+        if let Some(v) = I::link_info(id, &self.store, &self.root) {
+            if v.link.exists() {
+                return Ok(());
+            }
+            {
+                let parent = v.link.parent().unwrap();
+                if !parent.exists() {
+                    fs::create_dir_all(parent).map_err(|e| StoreError::Fs {
+                        op: FsErrorOp::CreateDir,
+                        path: parent.to_path_buf(),
+                        source: e,
+                    })?;
+                }
+            }
+            let mut source = PathBuf::new();
+            for _ in v
+                .link
+                .strip_prefix(&self.store.root)
+                .unwrap()
+                .parent()
+                .unwrap()
+                .components()
+            {
+                source.push("..");
+            }
+            source.extend(v.source.strip_prefix(&self.store.root).unwrap());
+            crate::util::relative_path::symlink(&source, &v.link).map_err(|e| StoreError::Fs {
+                op: FsErrorOp::SymLinkTo(v.source),
+                path: v.link,
+                source: e,
+            })
+        } else {
+            Ok(())
+        }
+    }
+    fn mark_missing(&mut self) {
+        self.absent_list.set_item_info(
+            info::ItemInfo {
+                in_store: true,
+                on_server: false,
+            },
+            self.store,
+        );
+    }
+    fn finish(self) -> Result<Option<PathBuf>, StoreError> {
+        self.finish_container().map(Some)
+    }
+}
+impl<I, O, IC> StoreContainer<O, I> for IC
+where
+    I: HasId + StoreItem + 'static,
+    IC: BasicStoreContainer<O, I> + 'static,
+{
+    const OPTION_NAME: &'static str = <IC as BasicStoreContainer<O, I>>::OPTION_NAME;
+    fn in_store(id: Self::Id<'_>, store: &Store) -> bool {
+        <Self as BasicStoreContainer<O, I>>::in_store(id, store)
+    }
+    fn store_path(id: Self::Id<'_>, store: &Store) -> Option<PathBuf> {
+        Some(store.container_store_path::<IC, O, I>(id))
+    }
+    type Handle<'a, 'b> = Container<'a, 'b, IC, O, I>;
+    fn save_data<'a, 'b>(
+        id: Self::Id<'a>,
+        store: &'b mut Store,
+    ) -> Result<Self::Handle<'a, 'b>, StoreError> {
+        store.add_container::<IC, O, I>(id)
+    }
 }

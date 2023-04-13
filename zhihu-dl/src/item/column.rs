@@ -1,13 +1,13 @@
 use super::any;
 use crate::{
-    element::{comment::HasComment, content::HasContent, Author, Content},
+    element::{content::HasContent, Author, Content},
     meta::Version,
     raw_data::{self, FromRaw, RawData},
-    store::{BasicStoreItem, StoreItemContainer},
+    store::{BasicStoreContainer, BasicStoreItem, ItemList},
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, fmt::Display, str::FromStr};
+use std::{borrow::Borrow, collections::BTreeSet, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
     media::{HasImage, Image},
@@ -84,14 +84,27 @@ impl HasId for Column {
     }
 }
 impl BasicStoreItem for Column {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.column.get(id.0).map_or(false, |v| v.container)
+    fn in_store(
+        id: Self::Id<'_>,
+        store: &crate::store::ObjectInfo,
+    ) -> crate::store::info::ItemInfo {
+        store
+            .column
+            .get(id.0)
+            .copied()
+            .unwrap_or_default()
+            .container
     }
-    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.column
-            .entry(self.info.id.clone())
+    fn add_info(
+        id: Self::Id<'_>,
+        info: crate::store::info::ItemInfo,
+        store: &mut crate::store::ObjectInfo,
+    ) {
+        store
+            .column
+            .entry(ColumnId(id.0.to_owned()))
             .or_default()
-            .container = true;
+            .container = info;
     }
 }
 
@@ -106,23 +119,9 @@ impl super::Fetchable for Column {
             .query(&[("include", "intro,created")])
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await
-    }
-}
-impl HasComment for Column {
-    fn has_comment(&self) -> bool {
-        false
-    }
-    fn is_comment_fetched(&self) -> bool {
-        true
-    }
-    async fn get_comments<P>(
-        &mut self,
-        _: P,
-        _: &crate::request::Client,
-    ) -> Result<(), crate::element::comment::fetch::Error> {
-        Ok(())
     }
 }
 
@@ -178,6 +177,19 @@ impl super::Item for Column {
             }
     }
 }
+impl ItemList<Column> for BTreeSet<ColumnId> {
+    fn insert(&mut self, id: <Column as HasId>::Id<'_>) {
+        self.insert(ColumnId(id.0.to_string()));
+    }
+    fn remove(&mut self, id: <Column as HasId>::Id<'_>) {
+        self.remove(id.0);
+    }
+    fn set_item_info(&self, info: crate::store::info::ItemInfo, store: &mut crate::store::Store) {
+        for i in self.iter() {
+            store.objects.column.entry(i.clone()).or_default().container = info;
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ColumnItem {
@@ -193,7 +205,7 @@ impl Display for ColumnItem {
     }
 }
 pub struct Regular;
-impl StoreItemContainer<Regular, super::any::Any> for Column {
+impl BasicStoreContainer<Regular, super::any::Any> for Column {
     const OPTION_NAME: &'static str = "item";
     type ItemList = any::AnyList;
     fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
@@ -206,9 +218,6 @@ impl StoreItemContainer<Regular, super::any::Any> for Column {
             .entry(ColumnId(id.0.to_string()))
             .or_default()
             .item = true;
-    }
-    fn add_item(id: <super::any::Any as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id)
     }
 }
 impl super::ItemContainer<Regular, super::any::Any> for Column {
@@ -227,7 +236,7 @@ impl super::ItemContainer<Regular, super::any::Any> for Column {
 }
 
 pub struct Pinned;
-impl StoreItemContainer<Pinned, super::any::Any> for Column {
+impl BasicStoreContainer<Pinned, super::any::Any> for Column {
     const OPTION_NAME: &'static str = "pinned-item";
     type ItemList = any::AnyList;
     fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
@@ -244,9 +253,6 @@ impl StoreItemContainer<Pinned, super::any::Any> for Column {
             .entry(ColumnId(id.0.to_owned()))
             .or_default()
             .pinned_item = true;
-    }
-    fn add_item(id: <super::any::Any as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id)
     }
 }
 impl super::ItemContainer<Pinned, super::any::Any> for Column {

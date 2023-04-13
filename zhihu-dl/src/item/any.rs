@@ -1,11 +1,11 @@
 use crate::{
-    element::{comment::HasComment, content::HasContent},
+    element::content::HasContent,
     item::{
-        answer, article,
+        answer, article, comment,
         other::{OtherInfo, OtherItem},
     },
     raw_data::RawData,
-    store::StoreItem,
+    store::{self, ItemList, StoreContainer, StoreItem},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,6 +14,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use web_dl_base::{id::HasId, media::HasImage};
+
+use super::ItemContainer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum AnyId<'a> {
@@ -59,40 +61,20 @@ impl HasId for Any {
         }
     }
 }
-impl HasComment for Any {
-    fn has_comment(&self) -> bool {
-        match self {
-            Any::Answer(a) => a.has_comment(),
-            Any::Article(a) => a.has_comment(),
-            Any::Other(_) => false,
-        }
-    }
-    fn is_comment_fetched(&self) -> bool {
-        match self {
-            Any::Answer(a) => a.is_comment_fetched(),
-            Any::Article(a) => a.is_comment_fetched(),
-            Any::Other(_) => true,
-        }
-    }
-    async fn get_comments<P: crate::progress::CommentTreeProg>(
-        &mut self,
-        prog: P,
-        client: &crate::request::Client,
-    ) -> Result<(), crate::element::comment::fetch::Error> {
-        match self {
-            Any::Answer(a) => a.get_comments(prog, client).await,
-            Any::Article(a) => a.get_comments(prog, client).await,
-            Any::Other { .. } => Ok(()),
-        }
-    }
-}
 
 impl StoreItem for Any {
-    fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
+    fn in_store(id: Self::Id<'_>, store: &store::Store) -> store::info::ItemInfo {
         match id {
-            AnyId::Answer(a) => answer::Answer::in_store(a, store),
-            AnyId::Article(a) => article::Article::in_store(a, store),
-            AnyId::Other(_) => false,
+            AnyId::Answer(a) => <answer::Answer as StoreItem>::in_store(a, store),
+            AnyId::Article(a) => <article::Article as StoreItem>::in_store(a, store),
+            AnyId::Other(_) => store::info::ItemInfo::default(),
+        }
+    }
+    fn add_info(id: Self::Id<'_>, info: store::info::ItemInfo, store: &mut store::Store) {
+        match id {
+            AnyId::Answer(a) => answer::Answer::add_info(a, info, store),
+            AnyId::Article(a) => article::Article::add_info(a, info, store),
+            AnyId::Other(_) => (),
         }
     }
     fn link_info<P: AsRef<Path>>(
@@ -111,11 +93,12 @@ impl StoreItem for Any {
     }
     fn save_data(
         &self,
+        on_server: bool,
         store: &mut crate::store::Store,
     ) -> Result<Option<PathBuf>, web_dl_base::storable::Error> {
         match self {
-            Any::Answer(a) => a.save_data(store),
-            Any::Article(a) => a.save_data(store),
+            Any::Answer(a) => a.save_data(on_server, store),
+            Any::Article(a) => a.save_data(on_server, store),
             Any::Other(o) => {
                 o.warn();
                 Ok(None)
@@ -124,12 +107,13 @@ impl StoreItem for Any {
     }
     fn save_data_link<P: AsRef<Path>>(
         &self,
+        on_server: bool,
         store: &mut crate::store::Store,
         dest: P,
     ) -> Result<Option<crate::store::LinkInfo>, web_dl_base::storable::Error> {
         match self {
-            Any::Answer(a) => a.save_data_link(store, dest),
-            Any::Article(a) => a.save_data_link(store, dest),
+            Any::Answer(a) => a.save_data_link(on_server, store, dest),
+            Any::Article(a) => a.save_data_link(on_server, store, dest),
             Any::Other(o) => {
                 o.warn();
                 Ok(None)
@@ -173,7 +157,7 @@ impl super::Item for Any {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AnyList {
     pub answer: BTreeSet<answer::AnswerId>,
     pub article: BTreeSet<article::ArticleId>,
@@ -188,6 +172,149 @@ impl AnyList {
                 self.article.insert(a);
             }
             AnyId::Other { .. } => (),
+        }
+    }
+}
+impl ItemList<Any> for AnyList {
+    fn insert(&mut self, id: <Any as HasId>::Id<'_>) {
+        match id {
+            AnyId::Answer(a) => {
+                self.answer.insert(a);
+            }
+            AnyId::Article(a) => {
+                self.article.insert(a);
+            }
+            AnyId::Other(_) => (),
+        }
+    }
+    fn remove(&mut self, id: <Any as HasId>::Id<'_>) {
+        match id {
+            AnyId::Answer(a) => {
+                self.answer.remove(&a);
+            }
+            AnyId::Article(a) => {
+                self.article.remove(&a);
+            }
+            AnyId::Other(_) => (),
+        }
+    }
+    fn set_item_info(&self, info: store::info::ItemInfo, store: &mut store::Store) {
+        self.answer.set_item_info(info, store);
+        self.article.set_item_info(info, store);
+    }
+}
+
+pub enum AnyContainer<'a, 'b> {
+    Answer(<answer::Answer as StoreContainer<super::VoidOpt, comment::Comment>>::Handle<'a, 'b>),
+    Article(<article::Article as StoreContainer<super::VoidOpt, comment::Comment>>::Handle<'a, 'b>),
+    Other,
+}
+impl<'a, 'b> store::ContainerHandle<comment::Comment> for AnyContainer<'a, 'b> {
+    fn link_item(
+        &mut self,
+        id: <comment::Comment as HasId>::Id<'_>,
+    ) -> Result<(), store::StoreError> {
+        match self {
+            Self::Answer(a) => a.link_item(id),
+            Self::Article(a) => a.link_item(id),
+            Self::Other => Ok(()),
+        }
+    }
+    fn mark_missing(&mut self) {
+        match self {
+            Self::Answer(a) => a.mark_missing(),
+            Self::Article(a) => a.mark_missing(),
+            Self::Other => (),
+        }
+    }
+    fn finish(self) -> Result<Option<PathBuf>, store::StoreError> {
+        match self {
+            Self::Answer(a) => a.finish(),
+            Self::Article(a) => a.finish(),
+            Self::Other => Ok(None),
+        }
+    }
+}
+impl StoreContainer<super::VoidOpt, comment::Comment> for Any {
+    const OPTION_NAME: &'static str = "comment";
+    fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
+        match id {
+            AnyId::Answer(a) => <answer::Answer as StoreContainer<
+                super::VoidOpt,
+                comment::Comment,
+            >>::in_store(a, store),
+            AnyId::Article(a) => <article::Article as StoreContainer<
+                super::VoidOpt,
+                comment::Comment,
+            >>::in_store(a, store),
+            AnyId::Other(_) => true,
+        }
+    }
+    fn store_path(id: Self::Id<'_>, store: &store::Store) -> Option<PathBuf> {
+        match id {
+            AnyId::Answer(a) => <answer::Answer as StoreContainer<
+                super::VoidOpt,
+                comment::Comment,
+            >>::store_path(a, store),
+            AnyId::Article(a) => <article::Article as StoreContainer<
+                super::VoidOpt,
+                comment::Comment,
+            >>::store_path(a, store),
+            AnyId::Other(_) => None,
+        }
+    }
+    type Handle<'a, 'b> = AnyContainer<'a, 'b>;
+    fn save_data<'a, 'b>(
+        id: Self::Id<'a>,
+        store: &'b mut store::Store,
+    ) -> Result<Self::Handle<'a, 'b>, store::StoreError> {
+        Ok(match id {
+            AnyId::Answer(a) => AnyContainer::Answer(<answer::Answer as StoreContainer<
+                super::VoidOpt,
+                comment::Comment,
+            >>::save_data(a, store)?),
+            AnyId::Article(a) => AnyContainer::Article(<article::Article as StoreContainer<
+                super::VoidOpt,
+                comment::Comment,
+            >>::save_data(a, store)?),
+            AnyId::Other(_) => AnyContainer::Other,
+        })
+    }
+}
+impl ItemContainer<super::VoidOpt, comment::Comment> for Any {
+    fn has_item(&self) -> bool {
+        match self {
+            Self::Answer(a) => a.has_item(),
+            Self::Article(a) => a.has_item(),
+            Self::Other(_) => false,
+        }
+    }
+    fn set_info(&self, has_item: bool) {
+        match self {
+            Self::Answer(a) => a.set_info(has_item),
+            Self::Article(a) => a.set_info(has_item),
+            Self::Other(_) => (),
+        }
+    }
+    async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
+        client: &crate::request::Client,
+        prog: &P,
+        id: Self::Id<'a>,
+    ) -> Result<std::collections::LinkedList<RawData>, reqwest::Error> {
+        match id {
+            AnyId::Answer(a) => {
+                <answer::Answer as ItemContainer<super::VoidOpt, comment::Comment>>::fetch_items(
+                    client, prog, a,
+                )
+                .await
+            }
+            AnyId::Article(a) => {
+                <article::Article as ItemContainer<super::VoidOpt, comment::Comment>>::fetch_items(
+                    client, prog, a,
+                )
+                .await
+            }
+            AnyId::Other(_) => Ok(Default::default()),
         }
     }
 }

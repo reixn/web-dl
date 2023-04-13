@@ -1,9 +1,6 @@
 use crate::{
-    element::{
-        comment::{self, Comment, HasComment},
-        content::HasContent,
-        Author, Content,
-    },
+    element::{content::HasContent, Author, Content},
+    item::comment,
     meta::Version,
     progress,
     raw_data::{FromRaw, RawData},
@@ -12,7 +9,7 @@ use crate::{
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr};
+use std::{cell::Cell, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
     media::{HasImage, Image},
@@ -49,7 +46,7 @@ pub struct ArticleInfo {
     #[has_image]
     pub cover: Option<Image>,
     #[serde(default = "comment::has_comment_default")]
-    pub has_comment: bool,
+    pub has_comment: Cell<bool>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -64,9 +61,6 @@ pub struct Article {
     #[has_image]
     #[content(main)]
     pub content: Content,
-    #[has_image]
-    #[content]
-    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -90,7 +84,8 @@ impl Article {
             .http_client
             .get(format!("https://www.zhihu.com/api/v4/articles/{}", id))
             .send()
-            .await
+            .await?
+            .error_for_status()
     }
     pub async fn fix_cover<P: progress::ItemProg>(
         &mut self,
@@ -137,25 +132,6 @@ impl super::Fetchable for Article {
         Self::send_request(client, id).await?.json().await
     }
 }
-impl HasComment for Article {
-    fn has_comment(&self) -> bool {
-        self.info.has_comment
-    }
-    fn is_comment_fetched(&self) -> bool {
-        self.comments.is_some()
-    }
-    async fn get_comments<P: progress::CommentTreeProg>(
-        &mut self,
-        prog: P,
-        client: &Client,
-    ) -> Result<(), comment::fetch::Error> {
-        match Comment::get(client, prog, comment::RootType::Article, self.info.id).await? {
-            Some(c) => self.comments = Some(c),
-            None => self.info.has_comment = false,
-        }
-        Ok(())
-    }
-}
 impl super::Item for Article {
     type Reply = Reply;
     fn from_reply(reply: Self::Reply, raw_data: RawData) -> Self {
@@ -166,12 +142,11 @@ impl super::Item for Article {
                 title: reply.title,
                 author: reply.author.0,
                 cover: reply.title_image.0,
-                has_comment: reply.comment_count > 0,
+                has_comment: Cell::new(reply.comment_count > 0),
                 created_time: reply.created.0,
                 updated_time: reply.updated.0,
             },
             content: reply.content.0,
-            comments: None,
             raw_data: Some(raw_data),
         }
     }
@@ -185,3 +160,8 @@ impl super::Item for Article {
             }
     }
 }
+
+item_list_btree!(Article, ArticleId);
+
+comment_store_container!(Article, article);
+comment_container!(Article, info.has_comment);

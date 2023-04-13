@@ -1,16 +1,13 @@
 use crate::{
-    element::{
-        comment::{self, HasComment},
-        content::HasContent,
-        Author, Comment, Content,
-    },
+    element::{content::HasContent, Author, Content},
+    item::comment,
     meta::Version,
     raw_data::{FromRaw, RawData, StrU64},
     store::BasicStoreItem,
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display, str::FromStr};
+use std::{cell::Cell, collections::HashSet, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
     media::HasImage,
@@ -53,7 +50,7 @@ pub struct PinInfo {
     pub repin_id: Option<PinId>,
     pub author: Author,
     #[serde(default = "comment::has_comment_default")]
-    pub has_comment: bool,
+    pub has_comment: Cell<bool>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -80,9 +77,6 @@ pub struct Pin {
     #[has_image]
     #[content]
     pub repin: Option<PinBody>,
-    #[has_image]
-    #[content]
-    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -94,6 +88,7 @@ impl HasId for Pin {
     }
 }
 basic_store_item!(Pin, pin);
+item_list_btree!(Pin, PinId);
 
 impl super::Fetchable for Pin {
     async fn fetch<'a>(
@@ -105,29 +100,13 @@ impl super::Fetchable for Pin {
             .get(format!("https://www.zhihu.com/api/v4/v2/pins/{}", id))
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await
     }
 }
-impl HasComment for Pin {
-    fn has_comment(&self) -> bool {
-        self.body.info.has_comment
-    }
-    fn is_comment_fetched(&self) -> bool {
-        self.comments.is_some()
-    }
-    async fn get_comments<P: crate::progress::CommentTreeProg>(
-        &mut self,
-        prog: P,
-        client: &crate::request::Client,
-    ) -> Result<(), comment::fetch::Error> {
-        match Comment::get(client, prog, comment::RootType::Pin, self.body.info.id).await? {
-            Some(c) => self.comments = Some(c),
-            None => self.body.info.has_comment = false,
-        }
-        Ok(())
-    }
-}
+comment_store_container!(Pin, pin);
+comment_container!(Pin, body.info.has_comment);
 
 #[derive(Deserialize)]
 pub struct Reply {
@@ -149,7 +128,7 @@ impl super::Item for Pin {
                     id: PinId(data.id.0),
                     repin_id,
                     author: data.author.0,
-                    has_comment: data.comment_count > 0,
+                    has_comment: Cell::new(data.comment_count > 0),
                     created_time: data.created.0,
                     updated_time: data.updated.0,
                 },
@@ -165,7 +144,6 @@ impl super::Item for Pin {
             version: VERSION,
             body: to_body(reply, repin.as_ref().map(|v| v.info.id)),
             repin,
-            comments: None,
             raw_data: Some(raw_data),
         }
     }

@@ -81,8 +81,6 @@ pub trait ContainerJob: ItemContainerProg {
     fn finish<I: Display>(self, operation: &str, num: Option<usize>, id: I);
 }
 pub trait Reporter: Progress {
-    fn new(jobs: Option<u64>) -> Self;
-
     type ItemRep<'a>: ItemJob
     where
         Self: 'a;
@@ -92,11 +90,11 @@ pub trait Reporter: Progress {
         prefix: &'static str,
         kind: &'static str,
         id: I,
-        option: O,
+        option: Option<O>,
     ) -> Self::ItemRep<'_>;
     fn link_item<I: Display, P: AsRef<Path>>(&self, kind: &str, id: I, dest: P);
 
-    type ItemContainerRep<'a>: ContainerJob
+    type ItemContainerRep<'a>: ContainerJob + Reporter
     where
         Self: 'a;
     fn start_item_container<II, IO, IC, I, O>(
@@ -104,7 +102,7 @@ pub trait Reporter: Progress {
         operation: &str,
         prefix: &'static str,
         id: I,
-        option: O,
+        option: Option<O>,
     ) -> Self::ItemContainerRep<'_>
     where
         II: item::Item,

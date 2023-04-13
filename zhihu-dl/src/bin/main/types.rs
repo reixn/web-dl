@@ -1,21 +1,16 @@
 use clap::Args;
-use std::{
-    fmt::{self, Display},
-    io::Write,
-};
+use std::{fmt, io::Write};
 use termcolor::{BufferedStandardStream, Color, ColorSpec, WriteColor};
 use web_dl_base::id::{HasId, OwnedId};
-use zhihu_dl::{
-    driver,
-    item::{
-        answer::{Answer, AnswerId},
-        article::{Article, ArticleId},
-        collection::{Collection, CollectionId},
-        column::{Column, ColumnRef},
-        pin::{Pin, PinId},
-        question::{Question, QuestionId},
-        user::{self, User, UserId},
-    },
+use zhihu_dl::item::{
+    answer::{Answer, AnswerId},
+    article::{Article, ArticleId},
+    collection::{Collection, CollectionId},
+    column::{Column, ColumnRef},
+    pin::{Pin, PinId},
+    question::{Question, QuestionId},
+    user::{self, User, UserId},
+    Comment, CommentId,
 };
 
 pub struct Output {
@@ -52,31 +47,6 @@ impl Output {
             self.buffer.write_fmt(fmt);
             self.buffer.flush();
         })
-    }
-}
-
-#[derive(Debug, Clone, Copy, Args)]
-pub struct GetOpt {
-    #[arg(long)]
-    pub no_convert: bool,
-    #[arg(long)]
-    pub comments: bool,
-}
-impl Display for GetOpt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(if self.comments {
-            "with comments"
-        } else {
-            "no comments"
-        })
-    }
-}
-impl GetOpt {
-    pub fn to_config(self) -> driver::GetConfig {
-        driver::GetConfig {
-            get_comments: self.comments,
-            convert_html: !self.no_convert,
-        }
     }
 }
 
@@ -129,6 +99,11 @@ impl OwnedId<Question> for NumId {
 impl OwnedId<Pin> for NumId {
     fn to_id(&self) -> <Pin as HasId>::Id<'_> {
         PinId(self.id)
+    }
+}
+impl OwnedId<Comment> for NumId {
+    fn to_id(&self) -> <Comment as HasId>::Id<'_> {
+        CommentId(self.id)
     }
 }
 

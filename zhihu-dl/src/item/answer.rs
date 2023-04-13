@@ -1,9 +1,6 @@
 use crate::{
-    element::{
-        comment::{self, HasComment},
-        content::HasContent,
-        Author, Comment, Content,
-    },
+    element::{content::HasContent, Author, Content},
+    item::comment,
     meta::Version,
     raw_data::{FromRaw, RawData},
     request::Zse96V3,
@@ -12,7 +9,7 @@ use crate::{
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr};
+use std::{cell::Cell, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
     media::HasImage,
@@ -53,7 +50,7 @@ pub struct AnswerInfo {
     pub author: Option<Author>,
     pub question: AnsweredQuestion,
     #[serde(default = "comment::has_comment_default")]
-    pub has_comment: bool,
+    pub has_comment: Cell<bool>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -67,9 +64,6 @@ pub struct Answer {
     #[has_image]
     #[content(main)]
     pub content: Content,
-    #[has_image]
-    #[content]
-    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -114,27 +108,9 @@ impl super::Fetchable for Answer {
             )
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await
-    }
-}
-impl HasComment for Answer {
-    fn has_comment(&self) -> bool {
-        self.info.has_comment
-    }
-    fn is_comment_fetched(&self) -> bool {
-        self.comments.is_some()
-    }
-    async fn get_comments<P: crate::progress::CommentTreeProg>(
-        &mut self,
-        prog: P,
-        client: &crate::request::Client,
-    ) -> Result<(), comment::fetch::Error> {
-        match Comment::get(client, prog, comment::RootType::Answer, self.info.id).await? {
-            Some(c) => self.comments = Some(c),
-            None => self.info.has_comment = false,
-        }
-        Ok(())
     }
 }
 impl super::Item for Answer {
@@ -149,12 +125,11 @@ impl super::Item for Answer {
                     id: crate::item::question::QuestionId(reply.question.id),
                     title: reply.question.title,
                 },
-                has_comment: reply.comment_count > 0,
+                has_comment: Cell::new(reply.comment_count > 0),
                 created_time: reply.created_time.0,
                 updated_time: reply.updated_time.0,
             },
             content: reply.content.0,
-            comments: None,
             raw_data: Some(raw_data),
         }
     }
@@ -169,3 +144,7 @@ impl super::Item for Answer {
             .await
     }
 }
+comment_store_container!(Answer, answer);
+comment_container!(Answer, info.has_comment);
+
+item_list_btree!(Answer, AnswerId);

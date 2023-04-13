@@ -1,18 +1,15 @@
 use crate::{
-    element::{
-        comment::{self, HasComment},
-        content::HasContent,
-        Author, Comment, Content,
-    },
+    element::{content::HasContent, Author, Content},
+    item::comment,
     meta::Version,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
-    store::{BasicStoreItem, StoreItemContainer},
+    store::{BasicStoreContainer, BasicStoreItem},
 };
 use chrono::{DateTime, FixedOffset};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, fmt::Display, str::FromStr};
+use std::{cell::Cell, collections::BTreeSet, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
     media::HasImage,
@@ -47,7 +44,7 @@ pub struct QuestionInfo {
     pub title: String,
     pub author: Option<Author>,
     #[serde(default = "comment::has_comment_default")]
-    pub has_comment: bool,
+    pub has_comment: Cell<bool>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -61,9 +58,6 @@ pub struct Question {
     #[has_image]
     #[content(main)]
     pub content: Content,
-    #[has_image]
-    #[content]
-    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -75,25 +69,11 @@ impl HasId for Question {
     }
 }
 basic_store_item!(Question, question);
-impl HasComment for Question {
-    fn has_comment(&self) -> bool {
-        self.info.has_comment
-    }
-    fn is_comment_fetched(&self) -> bool {
-        self.comments.is_some()
-    }
-    async fn get_comments<P: crate::progress::CommentTreeProg>(
-        &mut self,
-        prog: P,
-        client: &crate::request::Client,
-    ) -> Result<(), comment::fetch::Error> {
-        match Comment::get(client, prog, comment::RootType::Question, self.info.id).await? {
-            Some(c) => self.comments = Some(c),
-            None => self.info.has_comment = false,
-        }
-        Ok(())
-    }
-}
+
+comment_store_container!(Question, question);
+comment_container!(Question, info.has_comment);
+
+item_list_btree!(Question, QuestionId);
 
 impl super::Fetchable for Question {
     async fn fetch<'a>(
@@ -114,6 +94,7 @@ impl super::Fetchable for Question {
             )
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await
     }
@@ -138,12 +119,11 @@ impl super::Item for Question {
                 id: QuestionId(reply.id),
                 title: reply.title,
                 author: reply.author.0,
-                has_comment: reply.comment_count > 0,
+                has_comment: Cell::new(reply.comment_count > 0),
                 created_time: reply.created.0,
                 updated_time: reply.updated_time.0,
             },
             content: reply.detail.0,
-            comments: None,
             raw_data: Some(raw_data),
         }
     }
@@ -160,7 +140,7 @@ impl super::Item for Question {
 }
 
 mod param;
-impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for Question {
+impl BasicStoreContainer<super::VoidOpt, super::answer::Answer> for Question {
     const OPTION_NAME: &'static str = "answer";
     type ItemList = BTreeSet<super::answer::AnswerId>;
     fn in_store(id: Self::Id<'_>, store: &crate::store::Store) -> bool {
@@ -168,9 +148,6 @@ impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for Question {
     }
     fn add_info(id: Self::Id<'_>, store: &mut crate::store::Store) {
         store.objects.question.entry(id).or_default().answer = true;
-    }
-    fn add_item(id: <super::answer::Answer as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id);
     }
 }
 impl super::ItemContainer<super::VoidOpt, super::answer::Answer> for Question {

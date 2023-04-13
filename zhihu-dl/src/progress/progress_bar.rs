@@ -264,6 +264,54 @@ pub struct Item<'a> {
     kind: &'static str,
     option: String,
 }
+impl<'a> Item<'a> {
+    fn new<I: Display, O: Display>(
+        multi_progress: &'a MultiProgress,
+        operation: &str,
+        prefix: &'static str,
+        kind: &'static str,
+        id: I,
+        option: Option<O>,
+    ) -> Self {
+        let option = match option {
+            Some(opt) => format!("({})", opt),
+            None => String::default(),
+        };
+        multi_progress.suspend(|| {
+            println!(
+                "{op:>13} {prefix}{kind} {id} {option}",
+                op = Paint::cyan(operation),
+                prefix = prefix,
+                kind = kind,
+                id = id,
+                option = option
+            )
+        });
+        Self {
+            multi_progress,
+            start_time: SystemTime::now(),
+            prefix,
+            kind,
+            option,
+        }
+    }
+    fn link<I: Display, P: AsRef<Path>>(
+        multi_progress: &'a MultiProgress,
+        kind: &str,
+        id: I,
+        dest: P,
+    ) {
+        multi_progress.suspend(|| {
+            println!(
+                "{op:>13} {kind} {id} to {dest}",
+                op = Paint::green("Linked"),
+                kind = kind,
+                id = id,
+                dest = dest.as_ref().display()
+            )
+        })
+    }
+}
 impl<'a> Progress for Item<'a> {
     async fn sleep(&self, duration: std::time::Duration) {
         start_sleep(self.multi_progress, duration).await
@@ -285,7 +333,7 @@ impl<'a> ItemJob for Item<'a> {
     fn finish<I: Display>(self, operation: &str, id: I) {
         self.multi_progress.suspend(|| {
             println!(
-                "{op:>13} {prefix}{kind} {id} ({opt}) took {dur}",
+                "{op:>13} {prefix}{kind} {id} {opt} took {dur}",
                 op = Paint::green(operation),
                 prefix = self.prefix,
                 kind = self.kind,
@@ -311,6 +359,66 @@ impl<'a> Progress for Container<'a> {
         start_sleep(self.multi_progress, duration).await
     }
 }
+impl<'a> Container<'a> {
+    fn new<II, IO, IC, I, O>(
+        multi_progress: &'a MultiProgress,
+        operation: &str,
+        prefix: &'static str,
+        id: I,
+        option: Option<O>,
+    ) -> Self
+    where
+        II: item::Item,
+        IC: item::ItemContainer<IO, II>,
+        I: Display,
+        O: Display,
+    {
+        let option = match option {
+            Some(opt) => format!("({})", opt),
+            None => String::default(),
+        };
+        multi_progress.suspend(|| {
+            println!(
+                "{op:>13} {prefix}{item_kind} ({item_opt}) in {kind} {id} {option}",
+                op = Paint::cyan(operation),
+                prefix = prefix,
+                item_kind = II::TYPE,
+                item_opt = IC::OPTION_NAME,
+                kind = IC::TYPE,
+                id = id,
+                option = option
+            )
+        });
+        Self {
+            multi_progress,
+            start_time: SystemTime::now(),
+            prefix,
+            kind: IC::TYPE,
+            item_kind: II::TYPE,
+            option_name: IC::OPTION_NAME,
+            option: option,
+        }
+    }
+    fn link<II, IO, IC, I, P>(multi_progress: &'a MultiProgress, id: I, dest: P)
+    where
+        II: item::Item,
+        IC: item::ItemContainer<IO, II>,
+        I: Display,
+        P: AsRef<Path>,
+    {
+        multi_progress.suspend(|| {
+            println!(
+                "{op:>13} {item_kind} ({option}) in {kind} {id} to {dest}",
+                op = Paint::green("Linked"),
+                item_kind = II::TYPE,
+                option = IC::OPTION_NAME,
+                kind = IC::TYPE,
+                id = id,
+                dest = dest.as_ref().display()
+            )
+        });
+    }
+}
 impl<'a> ItemContainerProg for Container<'a> {
     type FetchRep<'b> = SubProgress<'b>
         where Self:'a+'b ;
@@ -327,7 +435,7 @@ impl<'a> ContainerJob for Container<'a> {
     fn finish<I: Display>(self, operation: &str, num: Option<usize>, id: I) {
         self.multi_progress.suspend(|| {
             println!(
-                "{op:>13} {prefix}{num}{item_kind} ({item_opt}) in {kind} {id} ({opt}) took {dur}",
+                "{op:>13} {prefix}{num}{item_kind} ({item_opt}) in {kind} {id} {opt} took {dur}",
                 op = Paint::green(operation),
                 prefix = self.prefix,
                 num = match num {
@@ -344,9 +452,51 @@ impl<'a> ContainerJob for Container<'a> {
         });
     }
 }
+impl<'b> Reporter for Container<'b> {
+    type ItemRep<'a> = Item<'a> where Self:'a;
+    fn start_item<O: Display, I: Display>(
+        &self,
+        operation: &str,
+        prefix: &'static str,
+        kind: &'static str,
+        id: I,
+        option: Option<O>,
+    ) -> Self::ItemRep<'_> {
+        Item::new(self.multi_progress, operation, prefix, kind, id, option)
+    }
+    fn link_item<I: Display, P: AsRef<Path>>(&self, kind: &str, id: I, dest: P) {
+        Item::link(self.multi_progress, kind, id, dest)
+    }
 
-impl Reporter for ProgressReporter {
-    fn new(jobs: Option<u64>) -> Self {
+    type ItemContainerRep<'a> = Container<'a> where Self:'a;
+    fn start_item_container<II, IO, IC, I, O>(
+        &self,
+        operation: &str,
+        prefix: &'static str,
+        id: I,
+        option: Option<O>,
+    ) -> Self::ItemContainerRep<'_>
+    where
+        II: item::Item,
+        IC: item::ItemContainer<IO, II>,
+        I: Display,
+        O: Display,
+    {
+        Container::new::<II, IO, IC, _, _>(self.multi_progress, operation, prefix, id, option)
+    }
+    fn link_container<II, IO, IC, I, P>(&self, id: I, dest: P)
+    where
+        II: item::Item,
+        IC: item::ItemContainer<IO, II>,
+        I: Display,
+        P: AsRef<Path>,
+    {
+        Container::link::<II, IO, IC, _, _>(self.multi_progress, id, dest)
+    }
+}
+
+impl ProgressReporter {
+    pub fn new(jobs: Option<u64>) -> Self {
         let multi = MultiProgress::with_draw_target(ProgressDrawTarget::stdout());
         Self {
             progress_bar: match jobs {
@@ -356,7 +506,8 @@ impl Reporter for ProgressReporter {
             multi_progress: multi,
         }
     }
-
+}
+impl Reporter for ProgressReporter {
     type ItemRep<'a> = Item<'a>;
     fn start_item<O: Display, I: Display>(
         &self,
@@ -364,39 +515,15 @@ impl Reporter for ProgressReporter {
         prefix: &'static str,
         kind: &'static str,
         id: I,
-        option: O,
+        option: Option<O>,
     ) -> Self::ItemRep<'_> {
         self.progress_bar.inc(1);
         self.progress_bar
             .set_message(format!("processing {} {}", kind, id));
-        self.multi_progress.suspend(|| {
-            println!(
-                "{op:>13} {prefix}{kind} {id} ({option})",
-                op = Paint::cyan(operation),
-                prefix = prefix,
-                kind = kind,
-                id = id,
-                option = option
-            )
-        });
-        Item {
-            multi_progress: &self.multi_progress,
-            start_time: SystemTime::now(),
-            prefix,
-            kind,
-            option: option.to_string(),
-        }
+        Item::new(&self.multi_progress, operation, prefix, kind, id, option)
     }
     fn link_item<I: Display, P: AsRef<Path>>(&self, kind: &str, id: I, dest: P) {
-        self.multi_progress.suspend(|| {
-            println!(
-                "{op:>13} {kind} {id} to {dest}",
-                op = Paint::green("Linked"),
-                kind = kind,
-                id = id,
-                dest = dest.as_ref().display()
-            )
-        });
+        Item::link(&self.multi_progress, kind, id, dest)
     }
 
     type ItemContainerRep<'a> = Container<'a>;
@@ -405,7 +532,7 @@ impl Reporter for ProgressReporter {
         operation: &str,
         prefix: &'static str,
         id: I,
-        option: O,
+        option: Option<O>,
     ) -> Self::ItemContainerRep<'_>
     where
         II: item::Item,
@@ -416,27 +543,7 @@ impl Reporter for ProgressReporter {
         self.progress_bar.inc(1);
         self.progress_bar
             .set_message(format!("processing {} in {} {}", II::TYPE, IC::TYPE, id));
-        self.multi_progress.suspend(|| {
-            println!(
-                "{op:>13} {prefix}{item_kind} ({item_opt}) in {kind} {id} ({option})",
-                op = Paint::cyan(operation),
-                prefix = prefix,
-                item_kind = II::TYPE,
-                item_opt = IC::OPTION_NAME,
-                kind = IC::TYPE,
-                id = id,
-                option = option
-            )
-        });
-        Container {
-            multi_progress: &self.multi_progress,
-            start_time: SystemTime::now(),
-            prefix,
-            kind: IC::TYPE,
-            item_kind: II::TYPE,
-            option_name: IC::OPTION_NAME,
-            option: option.to_string(),
-        }
+        Container::new::<II, IO, IC, I, O>(&self.multi_progress, operation, prefix, id, option)
     }
     fn link_container<II, IO, IC, I, P>(&self, id: I, dest: P)
     where
@@ -445,16 +552,6 @@ impl Reporter for ProgressReporter {
         I: Display,
         P: AsRef<Path>,
     {
-        self.multi_progress.suspend(|| {
-            println!(
-                "{op:>13} {item_kind} ({option}) in {kind} {id} to {dest}",
-                op = Paint::green("Linked"),
-                item_kind = II::TYPE,
-                option = IC::OPTION_NAME,
-                kind = IC::TYPE,
-                id = id,
-                dest = dest.as_ref().display()
-            )
-        });
+        Container::link::<II, IO, IC, I, P>(&self.multi_progress, id, dest)
     }
 }

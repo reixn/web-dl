@@ -1,12 +1,12 @@
 pub use crate::element::author::{UserId, UserType};
 use crate::{
-    element::{comment::HasComment, content::HasContent, Content},
+    element::{content::HasContent, Content},
     item::Item,
     meta::Version,
     progress,
     raw_data::{self, FromRaw, RawData},
     request::Zse96V3,
-    store::{BasicStoreItem, StoreItemContainer},
+    store::{BasicStoreContainer, BasicStoreItem},
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -62,11 +62,18 @@ impl HasId for User {
     }
 }
 impl BasicStoreItem for User {
-    fn in_store(id: Self::Id<'_>, info: &crate::store::ObjectInfo) -> bool {
-        info.user.get(&id.0).map_or(false, |v| v.container)
+    fn in_store(
+        id: Self::Id<'_>,
+        store: &crate::store::ObjectInfo,
+    ) -> crate::store::info::ItemInfo {
+        store.user.get(&id.0).copied().unwrap_or_default().container
     }
-    fn add_info(&self, info: &mut crate::store::ObjectInfo) {
-        info.user.entry(self.info.id).or_default().container = true;
+    fn add_info(
+        id: Self::Id<'_>,
+        info: crate::store::info::ItemInfo,
+        store: &mut crate::store::ObjectInfo,
+    ) {
+        store.user.entry(id.0).or_default().container = info;
     }
 }
 
@@ -81,23 +88,9 @@ impl super::Fetchable for User {
             .query(&[("include", "description,cover_url")])
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await
-    }
-}
-impl HasComment for User {
-    fn has_comment(&self) -> bool {
-        false
-    }
-    fn is_comment_fetched(&self) -> bool {
-        true
-    }
-    async fn get_comments<P>(
-        &mut self,
-        _: P,
-        _: &crate::request::Client,
-    ) -> Result<(), crate::element::comment::fetch::Error> {
-        Ok(())
     }
 }
 
@@ -157,13 +150,10 @@ macro_rules! container_info {
     };
 }
 
-impl StoreItemContainer<super::VoidOpt, super::answer::Answer> for User {
+impl BasicStoreContainer<super::VoidOpt, super::answer::Answer> for User {
     const OPTION_NAME: &'static str = "answer";
     type ItemList = BTreeSet<super::answer::AnswerId>;
     container_info!(answer);
-    fn add_item(id: <super::answer::Answer as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id);
-    }
 }
 impl super::ItemContainer<super::VoidOpt, super::answer::Answer> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
@@ -184,13 +174,10 @@ impl super::ItemContainer<super::VoidOpt, super::answer::Answer> for User {
     }
 }
 
-impl StoreItemContainer<super::VoidOpt, super::article::Article> for User {
+impl BasicStoreContainer<super::VoidOpt, super::article::Article> for User {
     const OPTION_NAME: &'static str = "article";
     type ItemList = BTreeSet<super::article::ArticleId>;
     container_info!(article);
-    fn add_item(id: <super::article::Article as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id);
-    }
 }
 impl super::ItemContainer<super::VoidOpt, super::article::Article> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
@@ -219,13 +206,10 @@ impl super::ItemContainer<super::VoidOpt, super::article::Article> for User {
     }
 }
 
-impl StoreItemContainer<super::VoidOpt, super::column::Column> for User {
+impl BasicStoreContainer<super::VoidOpt, super::column::Column> for User {
     const OPTION_NAME: &'static str = "column";
     type ItemList = BTreeSet<super::column::ColumnId>;
     container_info!(column);
-    fn add_item(id: <super::column::Column as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(super::column::ColumnId(id.0.to_owned()));
-    }
 }
 impl<'b> super::ItemContainer<super::VoidOpt, super::column::Column> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
@@ -259,13 +243,10 @@ impl<'b> super::ItemContainer<super::VoidOpt, super::column::Column> for User {
 }
 
 pub struct Created;
-impl StoreItemContainer<Created, super::collection::Collection> for User {
+impl BasicStoreContainer<Created, super::collection::Collection> for User {
     const OPTION_NAME: &'static str = "created-collection";
     type ItemList = BTreeSet<super::collection::CollectionId>;
     container_info!(collection.created);
-    fn add_item(id: <super::collection::Collection as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id);
-    }
 }
 impl super::ItemContainer<Created, super::collection::Collection> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
@@ -287,13 +268,10 @@ impl super::ItemContainer<Created, super::collection::Collection> for User {
 }
 
 pub struct Liked;
-impl StoreItemContainer<Liked, super::collection::Collection> for User {
+impl BasicStoreContainer<Liked, super::collection::Collection> for User {
     const OPTION_NAME: &'static str = "liked-collection";
     type ItemList = BTreeSet<super::collection::CollectionId>;
     container_info!(collection.liked);
-    fn add_item(id: <super::collection::Collection as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id);
-    }
 }
 impl super::ItemContainer<Liked, super::collection::Collection> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
@@ -318,13 +296,10 @@ impl super::ItemContainer<Liked, super::collection::Collection> for User {
     }
 }
 
-impl StoreItemContainer<super::VoidOpt, super::pin::Pin> for User {
+impl BasicStoreContainer<super::VoidOpt, super::pin::Pin> for User {
     const OPTION_NAME: &'static str = "pin";
     type ItemList = BTreeSet<super::pin::PinId>;
     container_info!(pin);
-    fn add_item(id: <super::pin::Pin as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id);
-    }
 }
 impl super::ItemContainer<super::VoidOpt, super::pin::Pin> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(

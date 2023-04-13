@@ -10,7 +10,7 @@ use zhihu_dl::{
         any::Any,
         column::{self, Column},
         user::{self, User},
-        Answer, Article, Collection, Item, ItemContainer, Pin, VoidOpt,
+        Answer, Article, Collection, Comment, Item, ItemContainer, Pin, Question, VoidOpt,
     },
     progress::progress_bar::ProgressReporter,
     store,
@@ -21,20 +21,14 @@ pub enum ContainerOper<Id: Args> {
     Get {
         #[command(flatten)]
         id: Id,
-        #[command(flatten)]
-        get_opt: GetOpt,
     },
     Update {
         #[command(flatten)]
         id: Id,
-        #[command(flatten)]
-        get_opt: GetOpt,
     },
     Download {
         #[command(flatten)]
         id: Id,
-        #[command(flatten)]
-        get_opt: GetOpt,
         #[command(flatten)]
         link_opt: LinkOpt,
     },
@@ -56,7 +50,7 @@ impl<Id: Args> ContainerOper<Id> {
         fn error_msg<I: Item, O, IC: ItemContainer<O, I>>(
             oper: &str,
             id: IC::Id<'_>,
-            get_opt: GetOpt,
+            get_opt: fmt::Arguments<'_>,
             other: fmt::Arguments<'_>,
         ) -> String {
             format!(
@@ -71,24 +65,21 @@ impl<Id: Args> ContainerOper<Id> {
             )
         }
         match self {
-            Self::Get { id, get_opt } => {
+            Self::Get { id } => {
                 let id = id.to_id();
                 driver
-                    .get_container::<IC, I, O, _>(prog, id, get_opt.to_config())
+                    .get_container::<IC, I, O, _>(prog, id)
                     .await
-                    .with_context(|| error_msg::<I, O, IC>("get", id, get_opt, format_args!("")))?;
+                    .with_context(|| {
+                        error_msg::<I, O, IC>("get", id, format_args!(""), format_args!(""))
+                    })?;
             }
-            Self::Download {
-                id,
-                get_opt,
-                link_opt,
-            } => {
+            Self::Download { id, link_opt } => {
                 let id = id.to_id();
                 driver
                     .download_container::<IC, I, O, _, _>(
                         prog,
                         id,
-                        get_opt.to_config(),
                         !link_opt.link_absolute,
                         &link_opt.dest,
                     )
@@ -97,7 +88,7 @@ impl<Id: Args> ContainerOper<Id> {
                         error_msg::<I, O, IC>(
                             "download",
                             id,
-                            get_opt,
+                            format_args!(""),
                             format_args!(
                                 " to {}[{}]",
                                 link_opt.dest,
@@ -110,13 +101,13 @@ impl<Id: Args> ContainerOper<Id> {
                         )
                     })?;
             }
-            Self::Update { id, get_opt } => {
+            Self::Update { id } => {
                 let id = id.to_id();
                 driver
-                    .update_container::<IC, I, O, _>(prog, id, get_opt.to_config())
+                    .update_container::<IC, I, O, _>(prog, id)
                     .await
                     .with_context(|| {
-                        error_msg::<I, O, IC>("update", id, get_opt, format_args!(""))
+                        error_msg::<I, O, IC>("update", id, format_args!(""), format_args!(""))
                     })?;
             }
         }
@@ -125,7 +116,31 @@ impl<Id: Args> ContainerOper<Id> {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum CommentEntry {
+    Comment {
+        #[command(subcommand)]
+        operation: ContainerOper<NumId>,
+    },
+}
+impl CommentEntry {
+    async fn run<IC>(self, driver: &mut Driver, prog: &ProgressReporter) -> anyhow::Result<()>
+    where
+        IC: ItemContainer<VoidOpt, Comment>,
+        NumId: OwnedId<IC>,
+    {
+        match self {
+            Self::Comment { operation } => {
+                operation.run::<IC, Comment, VoidOpt>(driver, prog).await
+            }
+        }
+    }
+}
+#[derive(Debug, Subcommand)]
 pub enum CollectionEntry {
+    Comment {
+        #[command(subcommand)]
+        operation: ContainerOper<NumId>,
+    },
     Item {
         #[command(subcommand)]
         operation: ContainerOper<NumId>,
@@ -146,6 +161,10 @@ pub enum ColumnEntry {
 #[derive(Debug, Subcommand)]
 pub enum QuestionEntry {
     Answer {
+        #[command(subcommand)]
+        operation: ContainerOper<NumId>,
+    },
+    Comment {
         #[command(subcommand)]
         operation: ContainerOper<NumId>,
     },
@@ -187,13 +206,33 @@ pub enum UserEntry {
 }
 #[derive(Debug, Subcommand)]
 pub enum ContainerCmd {
+    Answer {
+        #[command(subcommand)]
+        operation: CommentEntry,
+    },
+    Article {
+        #[command(subcommand)]
+        operation: CommentEntry,
+    },
     Collection {
         #[command(subcommand)]
         operation: CollectionEntry,
     },
+    Comment {
+        #[command(subcommand)]
+        operation: CommentEntry,
+    },
     Column {
         #[command(subcommand)]
         operation: ColumnEntry,
+    },
+    Pin {
+        #[command(subcommand)]
+        operation: CommentEntry,
+    },
+    Question {
+        #[command(subcommand)]
+        operation: QuestionEntry,
     },
     User {
         #[command(subcommand)]
@@ -207,13 +246,20 @@ impl ContainerCmd {
         prog: &ProgressReporter,
     ) -> Result<(), anyhow::Error> {
         match self {
-            Self::Collection {
-                operation: CollectionEntry::Item { operation },
-            } => {
-                operation
-                    .run::<Collection, Any, VoidOpt>(driver, prog)
-                    .await
-            }
+            Self::Answer { operation } => operation.run::<Answer>(driver, prog).await,
+            Self::Article { operation } => operation.run::<Article>(driver, prog).await,
+            Self::Collection { operation } => match operation {
+                CollectionEntry::Comment { operation } => {
+                    operation
+                        .run::<Collection, Comment, VoidOpt>(driver, prog)
+                        .await
+                }
+                CollectionEntry::Item { operation } => {
+                    operation
+                        .run::<Collection, Any, VoidOpt>(driver, prog)
+                        .await
+                }
+            },
             Self::Column { operation: op } => match op {
                 ColumnEntry::Item { operation } => {
                     operation
@@ -223,6 +269,20 @@ impl ContainerCmd {
                 ColumnEntry::PinnedItem { operation } => {
                     operation
                         .run::<Column, Any, column::Pinned>(driver, prog)
+                        .await
+                }
+            },
+            Self::Comment { operation } => operation.run::<Comment>(driver, prog).await,
+            Self::Pin { operation } => operation.run::<Pin>(driver, prog).await,
+            Self::Question { operation } => match operation {
+                QuestionEntry::Answer { operation } => {
+                    operation
+                        .run::<Question, Comment, VoidOpt>(driver, prog)
+                        .await
+                }
+                QuestionEntry::Comment { operation } => {
+                    operation
+                        .run::<Question, Comment, VoidOpt>(driver, prog)
                         .await
                 }
             },

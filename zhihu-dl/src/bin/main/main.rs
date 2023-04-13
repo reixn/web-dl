@@ -13,7 +13,7 @@ use std::{
 use termcolor::{BufferedStandardStream, Color};
 use zhihu_dl::{
     driver::{manifest::Manifest, Driver},
-    progress::{progress_bar::ProgressReporter, Reporter},
+    progress::progress_bar::ProgressReporter,
     store,
 };
 
@@ -32,6 +32,10 @@ enum ManifestOper {
         path: String,
     },
     Format {
+        #[arg(default_value = "manifest.ron")]
+        path: String,
+    },
+    Link {
         #[arg(default_value = "manifest.ron")]
         path: String,
     },
@@ -82,6 +86,7 @@ impl ManifestOper {
                                 .with_context(|| format!("failed to open file {}", path))?,
                         ))
                         .context("failed to deserialize ron")?,
+                        std::env::current_dir().context("failed to get current directory")?,
                     )
                     .await
                     .context("failed to apply manifest")?;
@@ -90,6 +95,36 @@ impl ManifestOper {
                     "Applied",
                     format_args_nl!(
                         "manifest {} took {}",
+                        path,
+                        HumanDuration(SystemTime::now().duration_since(st).unwrap())
+                    ),
+                );
+            }
+            Self::Link { path } => {
+                let st = SystemTime::now();
+                output.write_tagged(
+                    Color::Cyan,
+                    "Creating",
+                    format_args_nl!("symbol links according to manifest {}", path),
+                );
+                driver
+                    .link_manifest(
+                        reporter,
+                        &ron::de::from_reader(io::BufReader::new(
+                            fs::File::open(&path)
+                                .with_context(|| format!("failed to open file {}", path))?,
+                        ))
+                        .context("failed to deserialize manifest")?,
+                        std::env::current_dir().context("failed to get current directory")?,
+                    )
+                    .with_context(|| {
+                        format!("failed to create symbol links according to {}", path)
+                    })?;
+                output.write_tagged(
+                    Color::Green,
+                    "Created",
+                    format_args_nl!(
+                        "symbol links according to {} took {}",
                         path,
                         HumanDuration(SystemTime::now().duration_since(st).unwrap())
                     ),

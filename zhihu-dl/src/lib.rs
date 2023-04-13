@@ -9,14 +9,14 @@
 #![feature(maybe_uninit_slice)]
 #![feature(maybe_uninit_write_slice)]
 #![feature(slice_group_by)]
+#![feature(return_position_impl_trait_in_trait)]
 #![allow(incomplete_features)]
 
 pub mod element {
     pub mod author;
-    pub mod comment;
     pub mod content;
 
-    pub use self::{author::Author, comment::Comment, content::Content};
+    pub use self::{author::Author, content::Content};
 }
 
 #[macro_use]

@@ -1,16 +1,13 @@
 use crate::{
-    element::{
-        comment::{self, HasComment},
-        content::HasContent,
-        Author, Comment, Content,
-    },
+    element::{content::HasContent, Author, Content},
+    item::comment,
     meta::Version,
     raw_data::{self, FromRaw, RawData},
-    store::{self, BasicStoreItem, StoreItemContainer},
+    store::{self, BasicStoreContainer, BasicStoreItem},
 };
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr};
+use std::{cell::Cell, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
     media::HasImage,
@@ -45,7 +42,7 @@ pub struct CollectionInfo {
     pub title: String,
     pub creator: Author,
     #[serde(default = "comment::has_comment_default")]
-    pub has_comment: bool,
+    pub has_comment: Cell<bool>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
@@ -60,9 +57,6 @@ pub struct Collection {
     #[has_image]
     #[content(main)]
     pub description: Content,
-    #[has_image]
-    #[content]
-    pub comments: Option<Vec<Comment>>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,
 }
@@ -86,27 +80,9 @@ impl super::Fetchable for Collection {
             .get(format!("https://www.zhihu.com/api/v4/collections/{}", id))
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await
-    }
-}
-impl HasComment for Collection {
-    fn has_comment(&self) -> bool {
-        self.info.has_comment
-    }
-    fn is_comment_fetched(&self) -> bool {
-        self.comments.is_some()
-    }
-    async fn get_comments<P: crate::progress::CommentTreeProg>(
-        &mut self,
-        prog: P,
-        client: &crate::request::Client,
-    ) -> Result<(), comment::fetch::Error> {
-        match Comment::get(client, prog, comment::RootType::Collection, self.info.id).await? {
-            Some(c) => self.comments = Some(c),
-            None => self.info.has_comment = false,
-        }
-        Ok(())
     }
 }
 
@@ -134,12 +110,11 @@ impl super::Item for Collection {
                 id: CollectionId(d.id),
                 title: d.title,
                 creator: d.creator.0,
-                has_comment: d.comment_count > 0,
+                has_comment: Cell::new(d.comment_count > 0),
                 created_time: d.created_time.0,
                 updated_time: d.updated_time.0,
             },
             description: d.description.0,
-            comments: None,
             raw_data: Some(raw_data),
         }
     }
@@ -155,7 +130,12 @@ impl super::Item for Collection {
     }
 }
 
-impl StoreItemContainer<super::VoidOpt, super::any::Any> for Collection {
+comment_store_container!(Collection, collection);
+comment_container!(Collection, info.has_comment);
+
+item_list_btree!(Collection, CollectionId);
+
+impl BasicStoreContainer<super::VoidOpt, super::any::Any> for Collection {
     const OPTION_NAME: &'static str = "item";
     type ItemList = any::AnyList;
     fn in_store(id: Self::Id<'_>, store: &store::Store) -> bool {
@@ -163,9 +143,6 @@ impl StoreItemContainer<super::VoidOpt, super::any::Any> for Collection {
     }
     fn add_info(id: Self::Id<'_>, store: &mut store::Store) {
         store.objects.collection.entry(id).or_default().item = true;
-    }
-    fn add_item(id: <super::any::Any as HasId>::Id<'_>, list: &mut Self::ItemList) {
-        list.insert(id)
     }
 }
 impl super::ItemContainer<super::VoidOpt, super::any::Any> for Collection {

@@ -69,6 +69,7 @@ impl Client {
                 .request_signed::<S, U>(Method::GET, url)
                 .send()
                 .await?
+                .error_for_status()?
                 .json::<PagedData<C>>()
                 .await?;
             (pd.data, pd.paging)
@@ -89,6 +90,7 @@ impl Client {
                 .request_signed::<S, String>(Method::GET, next)
                 .send()
                 .await?
+                .error_for_status()?
                 .json::<PagedData<C>>()
                 .await?;
             prog.inc(pd.data.len() as u64);

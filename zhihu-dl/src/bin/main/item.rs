@@ -11,7 +11,7 @@ use zhihu_dl::{
     element::content,
     item::{Answer, Article, Collection, Column, Fetchable, Item, Pin, Question, User},
     progress::{progress_bar::ProgressReporter, ItemJob, Reporter},
-    store,
+    store::{self, StoreItem},
 };
 
 #[derive(Debug, Subcommand)]
@@ -28,12 +28,10 @@ pub enum ItemOper<Id: Args> {
     Get {
         #[command(flatten)]
         id: Id,
-        #[command(flatten)]
-        get_opt: GetOpt,
     },
     AddRaw {
-        #[command(flatten)]
-        get_opt: GetOpt,
+        #[arg(long)]
+        on_server: bool,
         #[arg(value_hint = clap::ValueHint::AnyPath)]
         path: String,
     },
@@ -41,15 +39,11 @@ pub enum ItemOper<Id: Args> {
         #[command(flatten)]
         id: Id,
         #[command(flatten)]
-        get_opt: GetOpt,
-        #[command(flatten)]
         link_opt: LinkOpt,
     },
     Update {
         #[command(flatten)]
         id: Id,
-        #[command(flatten)]
-        get_opt: GetOpt,
     },
     ConvertHtml {
         #[command(flatten)]
@@ -77,22 +71,22 @@ fn error_msg<I: Item, Id: Display>(oper: &str, id: Id, opt: fmt::Arguments<'_>) 
 async fn add_raw<I>(
     driver: &mut Driver,
     prog: &ProgressReporter,
-    get_opt: GetOpt,
+    on_server: bool,
     path: &String,
 ) -> anyhow::Result<()>
 where
     I: Item + media::HasImage + store::BasicStoreItem,
 {
-    let p = prog.start_item("Adding", "raw data of ", I::TYPE, path, get_opt);
+    let p = prog.start_item::<&str, _>("Adding", "raw data of ", I::TYPE, path, None);
     let v = driver
         .add_raw_item::<I, _>(
             &p,
+            on_server,
             serde_json::from_reader(std::io::BufReader::new(
                 std::fs::File::open(PathBuf::from(path.as_str()).as_path())
                     .with_context(|| format!("failed to open file {}", path))?,
             ))
             .context("failed to parse response to json value")?,
-            get_opt.to_config(),
         )
         .await?;
     p.finish("Added", v.id());
@@ -111,35 +105,28 @@ impl<Id: Args> ItemOper<Id> {
         Id: OwnedId<I>,
     {
         match self {
-            ItemOper::Get { id, get_opt } => {
+            ItemOper::Get { id } => {
                 check_driver(driver)?;
                 driver
-                    .get_item::<I, _>(prog, id.to_id(), get_opt.to_config())
+                    .get_item::<I, _>(prog, id.to_id())
                     .await
-                    .with_context(|| {
-                        error_msg::<I, _>("get", id.to_id(), format_args!("({})", get_opt))
-                    })?;
+                    .with_context(|| error_msg::<I, _>("get", id.to_id(), format_args!("")))?;
             }
-            ItemOper::AddRaw { get_opt, path } => {
+            ItemOper::AddRaw { path, on_server } => {
                 check_driver(driver)?;
-                add_raw::<I>(driver, prog, get_opt, &path)
+                add_raw::<I>(driver, prog, on_server, &path)
                     .await
                     .with_context(|| {
-                        error_msg::<I, _>("add raw data of", path, format_args!("{}", get_opt))
+                        error_msg::<I, _>("add raw data of", path, format_args!(""))
                     })?;
             }
-            ItemOper::Download {
-                id,
-                get_opt,
-                link_opt,
-            } => {
+            ItemOper::Download { id, link_opt } => {
                 check_driver(driver)?;
                 let id = id.to_id();
                 driver
                     .download_item::<I, _, _>(
                         prog,
                         id,
-                        get_opt.to_config(),
                         !link_opt.link_absolute,
                         PathBuf::from(link_opt.dest.as_str()),
                     )
@@ -149,8 +136,7 @@ impl<Id: Args> ItemOper<Id> {
                             "download",
                             id,
                             format_args!(
-                                "({}) to {}[{}]",
-                                get_opt,
+                                "to {}[{}]",
                                 link_opt.dest,
                                 if link_opt.link_absolute {
                                     "link absolute"
@@ -161,19 +147,17 @@ impl<Id: Args> ItemOper<Id> {
                         )
                     })?;
             }
-            ItemOper::Update { id, get_opt } => {
+            ItemOper::Update { id } => {
                 check_driver(driver)?;
                 let id = id.to_id();
                 driver
-                    .update_item::<I, _>(prog, id, get_opt.to_config())
+                    .update_item::<I, _>(prog, id)
                     .await
-                    .with_context(|| {
-                        error_msg::<I, _>("update", id, format_args!("({})", get_opt))
-                    })?;
+                    .with_context(|| error_msg::<I, _>("update", id, format_args!("")))?;
             }
             ItemOper::ConvertHtml { id } => {
                 let id = id.to_id();
-                let p = prog.start_item("Converting", "raw html of ", I::TYPE, id, "");
+                let p = prog.start_item::<&str, _>("Converting", "raw html of ", I::TYPE, id, None);
                 driver
                     .store
                     .get_object::<I>(id, storable::LoadOpt::default())
@@ -182,7 +166,7 @@ impl<Id: Args> ItemOper<Id> {
                         o.convert_html();
                         driver
                             .store
-                            .add_object(&o)
+                            .add_object(<I as StoreItem>::in_store(id, &driver.store).on_server, &o)
                             .context("failed to store object")
                     })
                     .with_context(|| error_msg::<I, _>("convert raw html", id, format_args!("")))?;
@@ -199,7 +183,7 @@ impl<Id: Args> ItemOper<Id> {
                     "document of ",
                     I::TYPE,
                     id,
-                    format_args!("(using pandoc, {}) to {}", format, dest),
+                    Some(format_args!("(using pandoc, {}) to {}", format, dest)),
                 );
                 let v: Result<(), anyhow::Error> = try {
                     let obj = driver

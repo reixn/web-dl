@@ -97,22 +97,11 @@ impl ContainerJob for Silent {
 }
 
 impl Reporter for Silent {
-    fn new(_: Option<u64>) -> Self {
-        Silent
-    }
-
     type ItemRep<'a> = Silent;
-    fn start_item<O: Display, I: Display>(
-        &self,
-        _: &str,
-        _: &str,
-        _: &str,
-        _: I,
-        _: O,
-    ) -> Self::ItemRep<'_> {
+    fn start_item<O, I>(&self, _: &str, _: &str, _: &str, _: I, _: Option<O>) -> Self::ItemRep<'_> {
         Silent
     }
-    fn link_item<I: Display, P: AsRef<Path>>(&self, _: &str, _: I, _: P) {}
+    fn link_item<I, P>(&self, _: &str, _: I, _: P) {}
 
     type ItemContainerRep<'a> = Silent;
     fn start_item_container<II, IO, IC, I, O>(
@@ -120,7 +109,7 @@ impl Reporter for Silent {
         _: &str,
         _: &'static str,
         _: I,
-        _: O,
+        _: Option<O>,
     ) -> Self::ItemContainerRep<'_> {
         Silent
     }

@@ -1,6 +1,5 @@
-use super::{Driver, GetConfig};
+use super::Driver;
 use crate::{
-    element::comment,
     item::{Fetchable, Item},
     progress::{self, ItemJob},
     raw_data::{self, RawData, RawDataInfo},
@@ -31,12 +30,6 @@ pub enum ItemError {
         #[from]
         serde_json::Error,
     ),
-    #[error("failed to fetch comment")]
-    Comment(
-        #[source]
-        #[from]
-        comment::FetchError,
-    ),
     #[error("failed to store data")]
     Store(
         #[source]
@@ -59,35 +52,24 @@ pub enum ItemError {
 }
 
 impl Driver {
-    pub async fn process_item<I: Item, P: progress::ItemProg>(
+    pub(super) async fn process_item<I: Item, P: progress::ItemProg>(
         &self,
         prog: &P,
         item: &mut I,
-        config: GetConfig,
-    ) -> Result<(), ItemError> {
+    ) {
         log::info!("getting images for {} {}", I::TYPE, item.id());
         if item.get_images(&self.client, prog).await {
             prog.sleep(self.client.request_interval).await;
         }
-        if config.get_comments && item.has_comment() {
-            log::info!("getting comments for {} {}", I::TYPE, item.id());
-            item.get_comments(prog.start_comment_tree(), &self.client)
-                .await
-                .map_err(ItemError::from)?;
-            prog.sleep(self.client.request_interval).await;
-        }
-        if config.convert_html {
-            log::info!("converting html for {} {}", I::TYPE, item.id());
-            item.convert_html();
-        }
-        Ok(())
+        log::info!("converting html for {} {}", I::TYPE, item.id());
+        item.convert_html();
     }
 
     async fn process_response<I, P>(
         &mut self,
         prog: &P,
+        on_server: bool,
         data: serde_json::Value,
-        config: GetConfig,
     ) -> Result<(I, PathBuf), ItemError>
     where
         I: Item + BasicStoreItem,
@@ -103,9 +85,12 @@ impl Driver {
                 data,
             },
         );
-        self.process_item(prog, &mut ret, config).await?;
+        self.process_item(prog, &mut ret).await;
         log::info!("add item {} {} to store", I::TYPE, ret.id());
-        let dest = self.store.add_object(&ret).map_err(ItemError::from)?;
+        let dest = self
+            .store
+            .add_object(on_server, &ret)
+            .map_err(ItemError::from)?;
         log::debug!("store path: {}", dest.display());
         self.store.add_media(&ret).map_err(ItemError::from)?;
         Ok((ret, dest))
@@ -115,22 +100,17 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        config: GetConfig,
     ) -> Result<(I, PathBuf), ItemError>
     where
         I: Fetchable + Item + BasicStoreItem,
         P: progress::ItemProg,
     {
-        self.process_response(
-            prog,
-            {
-                log::info!("fetching raw data for {} {}", I::TYPE, id);
-                let data = I::fetch(&self.client, id).await.map_err(ItemError::from)?;
-                log::trace!("raw data {:#?}", data);
-                data
-            },
-            config,
-        )
+        self.process_response(prog, true, {
+            log::info!("fetching raw data for {} {}", I::TYPE, id);
+            let data = I::fetch(&self.client, id).await.map_err(ItemError::from)?;
+            log::trace!("raw data {:#?}", data);
+            data
+        })
         .await
     }
 
@@ -138,17 +118,16 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        config: GetConfig,
     ) -> Result<Option<I>, ItemError>
     where
         I: Fetchable + Item + BasicStoreItem,
         P: progress::Reporter,
     {
-        Ok(if <I as StoreItem>::in_store(id, &self.store) {
+        Ok(if <I as StoreItem>::in_store(id, &self.store).in_store {
             None
         } else {
-            let p = prog.start_item("Getting", "", I::TYPE, id, config);
-            let ret = self.update_item_impl(&p, id, config).await?.0;
+            let p = prog.start_item::<&str, _>("Getting", "", I::TYPE, id, None);
+            let ret = self.update_item_impl(&p, id).await?.0;
             p.finish("Got", id);
             Some(ret)
         })
@@ -156,14 +135,14 @@ impl Driver {
     pub async fn add_raw_item<I, P>(
         &mut self,
         prog: &P,
+        on_server: bool,
         data: serde_json::Value,
-        config: GetConfig,
     ) -> Result<I, ItemError>
     where
         I: Item + BasicStoreItem,
         P: progress::ItemProg,
     {
-        self.process_response::<I, _>(prog, data, config)
+        self.process_response::<I, _>(prog, on_server, data)
             .await
             .map(|v| v.0)
     }
@@ -172,7 +151,6 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        config: GetConfig,
         relative: bool,
         dest: Pat,
     ) -> Result<Option<I>, ItemError>
@@ -182,11 +160,11 @@ impl Driver {
         Pat: AsRef<Path>,
     {
         let canon_dest = prepare_dest(dest.as_ref()).map_err(ItemError::DestPrep)?;
-        let (v, store_path) = if <I as StoreItem>::in_store(id, &self.store) {
+        let (v, store_path) = if <I as StoreItem>::in_store(id, &self.store).in_store {
             (None, self.store.store_path::<I>(id))
         } else {
-            let p = prog.start_item("Downloading", "", I::TYPE, id, config);
-            let (v, sp) = self.update_item_impl::<I, _>(&p, id, config).await?;
+            let p = prog.start_item::<&str, _>("Downloading", "", I::TYPE, id, None);
+            let (v, sp) = self.update_item_impl::<I, _>(&p, id).await?;
             p.finish("Downloaded", id);
             (Some(v), sp)
         };
@@ -209,14 +187,13 @@ impl Driver {
         &mut self,
         prog: &P,
         id: <I as HasId>::Id<'a>,
-        config: GetConfig,
     ) -> Result<I, ItemError>
     where
         I: Fetchable + Item + BasicStoreItem,
         P: progress::Reporter,
     {
-        let p = prog.start_item("Updating", "", I::TYPE, id, config);
-        let ret = self.update_item_impl(&p, id, config).await?;
+        let p = prog.start_item::<&str, _>("Updating", "", I::TYPE, id, None);
+        let ret = self.update_item_impl(&p, id).await?;
         p.finish("Updated", id);
         Ok(ret.0)
     }
