@@ -230,31 +230,39 @@ pub struct Store {
     media_storer: media::Storer,
     media_loader: media::Loader,
 }
+const WEBSITE: &str = "zhihu.com";
 const OBJECT_INFO: &str = "objects.yaml";
 const IMAGE_DIR: &str = "images";
 const VERSION_FILE: &str = "version.yaml";
 impl Store {
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, StoreError> {
-        fs::create_dir_all(path.as_ref()).map_err(|e| StoreError::Fs {
+        let (root, image_dir) = {
+            fs::create_dir_all(path.as_ref()).map_err(|e| StoreError::Fs {
+                op: FsErrorOp::CreateDir,
+                path: path.as_ref().to_path_buf(),
+                source: e,
+            })?;
+            let path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
+                op: FsErrorOp::CanonicalizePath,
+                path: path.as_ref().to_path_buf(),
+                source: e,
+            })?;
+            (path.join(WEBSITE), path.join(IMAGE_DIR))
+        };
+        fs::create_dir(&root).map_err(|e| StoreError::Fs {
             op: FsErrorOp::CreateDir,
-            path: path.as_ref().to_path_buf(),
+            path: root.clone(),
             source: e,
         })?;
-        let path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
-            op: FsErrorOp::CanonicalizePath,
-            path: path.as_ref().to_path_buf(),
-            source: e,
-        })?;
-        let image_dir = path.join(IMAGE_DIR);
         Ok(Self {
             version: {
-                store_yaml(&VERSION, &path, VERSION_FILE)?;
+                store_yaml(&VERSION, &root, VERSION_FILE)?;
                 VERSION
             },
             dirty: false,
             objects: {
                 let ret = ObjectInfo::default();
-                store_yaml(&ret, path.as_path(), OBJECT_INFO)?;
+                store_yaml(&ret, root.as_path(), OBJECT_INFO)?;
                 ret
             },
             media_storer: media::Storer::new({
@@ -270,27 +278,29 @@ impl Store {
                 }
             }),
             media_loader: media::Loader::new(image_dir),
-            root: path,
+            root,
         })
     }
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StoreError> {
-        let path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
-            op: FsErrorOp::CanonicalizePath,
-            path: path.as_ref().to_path_buf(),
-            source: e,
-        })?;
-        let media_dir = path.join(IMAGE_DIR);
-        let version = load_yaml(&path, || Version { major: 0, minor: 0 }, VERSION_FILE)?;
+        let (root, media_dir) = {
+            let path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
+                op: FsErrorOp::CanonicalizePath,
+                path: path.as_ref().to_path_buf(),
+                source: e,
+            })?;
+            (path.join(WEBSITE), path.join(IMAGE_DIR))
+        };
+        let version = load_yaml(&root, || Version { major: 0, minor: 0 }, VERSION_FILE)?;
         if !VERSION.is_compatible(version) {
             return Err(StoreError::Version(version));
         }
         Ok(Self {
             version,
-            objects: load_yaml(&path, ObjectInfo::default, OBJECT_INFO)?,
+            objects: load_yaml(&root, ObjectInfo::default, OBJECT_INFO)?,
             dirty: false,
             media_storer: media::Storer::new(&media_dir),
             media_loader: media::Loader::new(media_dir),
-            root: path,
+            root,
         })
     }
     pub fn migrate<P: AsRef<Path>>(path: P) -> Result<(), StoreError> {
