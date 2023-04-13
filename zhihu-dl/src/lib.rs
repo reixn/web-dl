@@ -10,6 +10,7 @@
 #![feature(maybe_uninit_write_slice)]
 #![feature(slice_group_by)]
 #![feature(return_position_impl_trait_in_trait)]
+#![feature(btree_drain_filter)]
 #![allow(incomplete_features)]
 
 pub mod element {

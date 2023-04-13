@@ -4,6 +4,7 @@ use clap::Subcommand;
 use std::{
     fs,
     io::{self, Seek},
+    path::PathBuf,
 };
 use termcolor::Color;
 use zhihu_dl::{
@@ -21,10 +22,24 @@ pub enum ManifestCmd {
         #[arg(default_value = "manifest.ron")]
         path: String,
     },
+    Update {
+        #[arg(default_value = "manifest.ron")]
+        path: String,
+    },
     Link {
         #[arg(default_value = "manifest.ron")]
         path: String,
     },
+}
+
+fn load_manif(path: &String) -> anyhow::Result<Manifest> {
+    ron::de::from_reader(io::BufReader::new(
+        fs::File::open(path.as_str()).with_context(|| format!("failed to open file {}", path))?,
+    ))
+    .context("failed to deserialize ron")
+}
+fn current_dir() -> anyhow::Result<PathBuf> {
+    std::env::current_dir().context("failed to get current directory")
 }
 impl ManifestCmd {
     pub async fn run(
@@ -60,18 +75,18 @@ impl ManifestCmd {
             Self::Apply { path } => {
                 let job = reporter.start_job("Applying", format_args!("manifest {}", path));
                 driver
-                    .apply_manifest(
-                        reporter,
-                        &ron::de::from_reader(io::BufReader::new(
-                            fs::File::open(path.as_str())
-                                .with_context(|| format!("failed to open file {}", path))?,
-                        ))
-                        .context("failed to deserialize ron")?,
-                        std::env::current_dir().context("failed to get current directory")?,
-                    )
+                    .apply_manifest(reporter, &load_manif(&path)?, current_dir()?)
                     .await
                     .context("failed to apply manifest")?;
                 job.finish("Applied", format_args!("manifest {}", path,));
+            }
+            Self::Update { path } => {
+                let job = reporter.start_job("Updating", format_args!("manifest {}", path));
+                driver
+                    .update_manifest(reporter, &load_manif(&path)?, current_dir()?)
+                    .await
+                    .context("failed to update manifest")?;
+                job.finish("Updated", format_args!("manifest {}", path));
             }
             Self::Link { path } => {
                 let job = reporter.start_job(
@@ -79,15 +94,7 @@ impl ManifestCmd {
                     format_args!("symbol links according to manifest {}", path),
                 );
                 driver
-                    .link_manifest(
-                        reporter,
-                        &ron::de::from_reader(io::BufReader::new(
-                            fs::File::open(&path)
-                                .with_context(|| format!("failed to open file {}", path))?,
-                        ))
-                        .context("failed to deserialize manifest")?,
-                        std::env::current_dir().context("failed to get current directory")?,
-                    )
+                    .link_manifest(reporter, &load_manif(&path)?, current_dir()?)
                     .with_context(|| {
                         format!("failed to create symbol links according to {}", path)
                     })?;

@@ -20,15 +20,19 @@ mod option {
     }
 }
 
-pub trait Mergable {
+pub(super) trait ConfValue: Eq + Default {
     fn merge(&mut self, other: Self);
+    fn diff(&mut self, other: &Self);
 }
-impl Mergable for bool {
+impl ConfValue for bool {
     fn merge(&mut self, other: Self) {
         *self |= other;
     }
+    fn diff(&mut self, other: &Self) {
+        *self &= !other;
+    }
 }
-impl<I: Mergable> Mergable for Option<I> {
+impl<I: ConfValue> ConfValue for Option<I> {
     fn merge(&mut self, other: Self) {
         if let Some(v2) = other {
             match self {
@@ -38,8 +42,18 @@ impl<I: Mergable> Mergable for Option<I> {
             }
         }
     }
+    fn diff(&mut self, other: &Self) {
+        if let Some(v) = self {
+            if let Some(o) = other {
+                v.diff(o);
+                if *v == I::default() {
+                    *self = None;
+                }
+            }
+        }
+    }
 }
-impl<K: Ord, V: Mergable> Mergable for BTreeMap<K, V> {
+impl<K: Ord, V: ConfValue> ConfValue for BTreeMap<K, V> {
     fn merge(&mut self, other: Self) {
         for (k, v) in other.into_iter() {
             match self.entry(k) {
@@ -52,6 +66,15 @@ impl<K: Ord, V: Mergable> Mergable for BTreeMap<K, V> {
             }
         }
     }
+    fn diff(&mut self, other: &Self) {
+        self.drain_filter(|k, v| match other.get(k) {
+            Some(v2) => {
+                v.diff(v2);
+                *v == Default::default()
+            }
+            None => false,
+        });
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -60,9 +83,12 @@ pub struct ItemOption<C> {
     #[serde(default, with = "option", skip_serializing_if = "Option::is_none")]
     pub child: Option<C>,
 }
-impl<C: Mergable + Serialize + serde::de::DeserializeOwned> Mergable for ItemOption<C> {
+impl<C: ConfValue + Serialize + serde::de::DeserializeOwned> ConfValue for ItemOption<C> {
     fn merge(&mut self, other: Self) {
         self.child.merge(other.child);
+    }
+    fn diff(&mut self, other: &Self) {
+        self.child.diff(&other.child)
     }
 }
 
@@ -73,9 +99,12 @@ macro_rules! child_opt {
           $(#[serde(default, with = "option", skip_serializing_if = "Option::is_none")]
           pub $i: Option<$t>,)+
       }
-      impl Mergable for $n {
+      impl ConfValue for $n {
           fn merge(&mut self, other: Self) {
               $(self.$i.merge(other.$i);)+
+          }
+          fn diff(&mut self, other: &Self) {
+              $(self.$i.diff(&other.$i);)+
           }
       }
   };
@@ -108,7 +137,7 @@ child_opt!(
     (pin: PinChild),
     (question: QuestionChild)
 );
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub struct UserOption {
     pub id: UserId,
     #[serde(default, with = "option", skip_serializing_if = "Option::is_none")]
@@ -116,23 +145,39 @@ pub struct UserOption {
     #[serde(default, with = "option", skip_serializing_if = "Option::is_none")]
     pub child: Option<UserChild>,
 }
-impl Mergable for UserOption {
+impl Default for UserOption {
+    fn default() -> Self {
+        Self {
+            id: UserId([0; 16]),
+            container: None,
+            child: None,
+        }
+    }
+}
+impl ConfValue for UserOption {
     fn merge(&mut self, other: Self) {
         self.container.merge(other.container);
         self.child.merge(other.child);
+    }
+    fn diff(&mut self, other: &Self) {
+        self.container.diff(&other.container);
+        self.child.diff(&other.child);
     }
 }
 
 macro_rules! leaf {
     ($(($n:ident: $k:ty, $v:ty)),+) => {
-        #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+        #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
         pub struct ManifestLeaf {
             $(#[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
               pub $n: BTreeMap<$k, $v>,)+
         }
-        impl Mergable for ManifestLeaf {
+        impl ConfValue for ManifestLeaf {
             fn merge(&mut self, other: Self) {
                 $(self.$n.merge(other.$n);)+
+            }
+            fn diff(&mut self, other: &Self) {
+                $(self.$n.diff(&other.$n);)+
             }
         }
     };
