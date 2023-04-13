@@ -60,8 +60,7 @@ impl Driver {
         let mut path = path.join(I::TYPE);
         path.push(name.to_string());
         if !path.exists() {
-            let mut sp = self.store.store_path::<I>(id);
-            sp.pop();
+            let sp = self.store.item_path::<I>(id);
             link_to_dest(true, &sp, &path).map_err(|e| Error::Link {
                 store_path: sp,
                 dest: path.clone(),

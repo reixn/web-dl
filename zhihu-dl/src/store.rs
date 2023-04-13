@@ -195,7 +195,6 @@ fn store_yaml<V: Serialize, P: AsRef<Path>>(
 fn item_path<I: HasId, P: AsRef<Path>>(id: I::Id<'_>, path: P) -> PathBuf {
     let mut path = path.as_ref().join(I::TYPE);
     path.push(id.to_string());
-    path.push("info");
     path
 }
 pub trait BasicStoreItem: HasId + storable::Storable {
@@ -477,14 +476,18 @@ impl Store {
     }
 
     pub fn store_path<I: HasId>(&self, id: I::Id<'_>) -> PathBuf {
+        let mut ret = self.item_path::<I>(id);
+        ret.push("info");
+        ret
+    }
+    pub fn item_path<I: HasId>(&self, id: I::Id<'_>) -> PathBuf {
         item_path::<I, _>(id, &self.root)
     }
     pub fn container_store_path<IC: BasicStoreContainer<O, I>, O, I: HasId + 'static>(
         &self,
         id: IC::Id<'_>,
     ) -> PathBuf {
-        let mut ret = self.root.join(IC::TYPE);
-        ret.push(id.to_string());
+        let mut ret = self.item_path::<IC>(id);
         ret.push(IC::OPTION_NAME);
         ret
     }
@@ -585,7 +588,7 @@ impl<I: BasicStoreItem> StoreItem for I {
     }
     fn link_info<P: AsRef<Path>>(id: Self::Id<'_>, store: &Store, dest: P) -> Option<LinkInfo> {
         Some(LinkInfo {
-            source: store.store_path::<Self>(id),
+            source: store.item_path::<Self>(id),
             link: item_path::<Self, _>(id, dest),
         })
     }
