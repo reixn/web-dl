@@ -10,6 +10,7 @@ use crate::{
     progress::{ContainerJob, ItemContainerProg, ItemsProg, Reporter},
     store::{BasicStoreItem, StoreItem},
 };
+use std::fmt::Display;
 use web_dl_base::{id::HasId, storable};
 
 #[derive(Debug, thiserror::Error)]
@@ -46,17 +47,253 @@ pub enum Error {
         source: Box<Self>,
     },
 }
-impl Error {
-    pub(super) fn sub_container<IC: ItemContainer<O, I>, O, I: Item>(
-        container: &IC,
-        source: Self,
-    ) -> Self {
-        Self::SubContainer {
-            id: container.id().to_string(),
-            kind: I::TYPE,
-            option: IC::OPTION_NAME,
-            source: Box::new(source),
+
+trait OptDisplay {
+    fn fmt_opt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+}
+trait ApplyChild<I>: Default + Eq + Copy + OptDisplay {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &I,
+    ) -> Result<(), Error>;
+}
+
+impl OptDisplay for CommentChild {
+    fn fmt_opt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.child.unwrap_or(false) {
+            f.write_str("+child-comment")
+        } else {
+            Ok(())
         }
+    }
+}
+impl ApplyChild<Comment> for CommentChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Comment,
+    ) -> Result<(), Error> {
+        if body.has_item() {
+            driver
+                .apply_container::<Comment, Comment, VoidOpt, _>(prog, body.id())
+                .await
+                .map(|_| ())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl OptDisplay for BasicChild {
+    fn fmt_opt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.comment != Default::default() {
+            f.write_str("+comment")
+        } else {
+            Ok(())
+        }
+    }
+}
+impl ApplyChild<Answer> for BasicChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Answer,
+    ) -> Result<(), Error> {
+        driver.apply_sub_container(prog, body, self.comment).await
+    }
+}
+impl ApplyChild<Any> for BasicChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Any,
+    ) -> Result<(), Error> {
+        driver.apply_sub_container(prog, body, self.comment).await
+    }
+}
+impl ApplyChild<Article> for BasicChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Article,
+    ) -> Result<(), Error> {
+        driver.apply_sub_container(prog, body, self.comment).await
+    }
+}
+impl ApplyChild<Pin> for BasicChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Pin,
+    ) -> Result<(), Error> {
+        driver.apply_sub_container(prog, body, self.comment).await
+    }
+}
+
+impl OptDisplay for CollectionChild {
+    fn fmt_opt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {}",
+            if self.comment.is_some() {
+                "+comment"
+            } else {
+                ""
+            },
+            if self.item.is_some() { "+item" } else { "" }
+        )
+    }
+}
+impl ApplyChild<Collection> for CollectionChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Collection,
+    ) -> Result<(), Error> {
+        driver
+            .apply_sub_container::<Collection, VoidOpt, Comment, _, _>(prog, body, self.comment)
+            .await?;
+        driver
+            .apply_sub_container::<Collection, VoidOpt, Any, _, _>(prog, body, self.item)
+            .await
+    }
+}
+
+impl OptDisplay for ColumnChild {
+    fn fmt_opt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {}",
+            if self.pinned.is_some() {
+                "+pinned-item"
+            } else {
+                ""
+            },
+            if self.regular.is_some() {
+                "+regular-item"
+            } else {
+                ""
+            }
+        )
+    }
+}
+impl ApplyChild<Column> for ColumnChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Column,
+    ) -> Result<(), Error> {
+        driver
+            .apply_sub_container::<_, column::Pinned, Any, _, _>(prog, body, self.pinned)
+            .await?;
+        driver
+            .apply_sub_container::<_, column::Regular, Any, _, _>(prog, body, self.regular)
+            .await
+    }
+}
+
+impl OptDisplay for QuestionChild {
+    fn fmt_opt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {}",
+            if self.comment.is_some() {
+                "+comment"
+            } else {
+                ""
+            },
+            if self.answer.is_some() { "+answer" } else { "" }
+        )
+    }
+}
+impl ApplyChild<Question> for QuestionChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &Question,
+    ) -> Result<(), Error> {
+        driver
+            .apply_sub_container::<Question, VoidOpt, Answer, _, _>(prog, body, self.answer)
+            .await?;
+        driver.apply_sub_container(prog, body, self.comment).await
+    }
+}
+
+impl OptDisplay for UserChild {
+    fn fmt_opt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.answer.is_some() {
+            f.write_str("+answer ")?;
+        }
+        if self.article.is_some() {
+            f.write_str("+article ")?;
+        }
+        if let Some(col) = self.collection {
+            if col.created.is_some() {
+                f.write_str("+created-collection ")?;
+            }
+            if col.liked.is_some() {
+                f.write_str("+liked-collection ")?;
+            }
+        }
+        if self.column.is_some() {
+            f.write_str("+column ")?;
+        }
+        if self.pin.is_some() {
+            f.write_str("+pin ")?;
+        }
+        Ok(())
+    }
+}
+impl ApplyChild<User> for UserChild {
+    async fn apply_child<P: Reporter>(
+        &self,
+        driver: &mut Driver,
+        prog: &P,
+        body: &User,
+    ) -> Result<(), Error> {
+        driver
+            .apply_sub_container::<_, VoidOpt, Answer, _, _>(prog, body, self.answer)
+            .await?;
+        driver
+            .apply_sub_container::<_, VoidOpt, Article, _, _>(prog, body, self.article)
+            .await?;
+        driver
+            .apply_sub_container::<_, user::Created, Collection, _, _>(
+                prog,
+                body,
+                self.collection.and_then(|v| v.created),
+            )
+            .await?;
+        driver
+            .apply_sub_container::<_, user::Liked, Collection, _, _>(
+                prog,
+                body,
+                self.collection.and_then(|v| v.liked),
+            )
+            .await?;
+        driver
+            .apply_sub_container::<_, VoidOpt, Column, _, _>(prog, body, self.column)
+            .await?;
+        driver
+            .apply_sub_container::<_, VoidOpt, Pin, _, _>(prog, body, self.pin)
+            .await
+    }
+}
+
+struct ShowOpt<I>(I);
+impl<I: OptDisplay> Display for ShowOpt<I> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt_opt(f)
     }
 }
 
@@ -76,65 +313,17 @@ impl Driver {
                 source: e,
             })
     }
-    async fn apply_comment_container<IC: ItemContainer<VoidOpt, Comment>, P: Reporter>(
+    async fn apply_sub_container<IC, O, I, Opt, P>(
         &mut self,
         prog: &P,
         body: &IC,
-        child: Option<CommentChild>,
-    ) -> Result<(), Error> {
-        let child = match child {
-            Some(c) => c,
-            None => return Ok(()),
-        };
-        if !body.has_item() {
-            return Ok(());
-        }
-        let roots = self
-            .apply_container::<IC, Comment, VoidOpt, _>(prog, body.id())
-            .await?;
-        if let Some(true) = child.child {
-            let prog = prog.start_item_container::<Comment, VoidOpt, IC, _, _>(
-                "Processing",
-                "",
-                body.id(),
-                Some("+child-comment"),
-            );
-            {
-                let mut p = prog.start_items(roots.len() as u64);
-                for i in &roots {
-                    if i.value.has_item() {
-                        let _p_i = ItemsProg::start_item(&mut p, Comment::TYPE, i.value.id());
-                        self.apply_container::<Comment, Comment, VoidOpt, _>(&prog, i.value.id())
-                            .await
-                            .map_err(|e| Error::sub_container(body, e))?;
-                    } else {
-                        p.skip_item()
-                    }
-                }
-            }
-            prog.finish("Processed", Some(roots.len()), body.id());
-        }
-        Ok(())
-    }
-    async fn apply_basic_child<I: ItemContainer<VoidOpt, Comment>, P: Reporter>(
-        &mut self,
-        prog: &P,
-        body: &I,
-        child: BasicChild,
-    ) -> Result<(), Error> {
-        self.apply_comment_container::<I, _>(prog, body, child.comment)
-            .await
-    }
-    async fn apply_basic_container<IC, O, I, P>(
-        &mut self,
-        prog: &P,
-        body: &IC,
-        child: Option<BasicChild>,
+        child: Option<Opt>,
     ) -> Result<(), Error>
     where
-        I: Item + ItemContainer<VoidOpt, Comment>,
         IC: ItemContainer<O, I>,
+        I: Item,
         P: Reporter,
+        Opt: ApplyChild<I>,
     {
         let child = match child {
             Some(c) => c,
@@ -144,159 +333,45 @@ impl Driver {
             return Ok(());
         }
         let roots = self.apply_container::<IC, I, O, _>(prog, body.id()).await?;
-        if child != Default::default() {
-            let prog = prog.start_item_container::<Comment, VoidOpt, I, _, _>(
+        if child != Opt::default() {
+            let prog = prog.start_item_container::<I, O, IC, _, _>(
                 "Processing",
                 "",
                 body.id(),
-                Some("+comment"),
+                Some(ShowOpt(child)),
             );
             {
                 let mut p = prog.start_items(roots.len() as u64);
                 for i in &roots {
                     let _p_i = ItemsProg::start_item(&mut p, I::TYPE, i.value.id());
-                    self.apply_basic_child::<I, _>(&prog, &i.value, child)
+                    child
+                        .apply_child(self, &prog, &i.value)
                         .await
-                        .map_err(|e| Error::sub_container(body, e))?;
+                        .map_err(|e| Error::SubContainer {
+                            id: body.id().to_string(),
+                            kind: IC::TYPE,
+                            option: IC::OPTION_NAME,
+                            source: Box::new(e),
+                        })?;
                 }
             }
             prog.finish("Processed", Some(roots.len()), body.id());
         }
         Ok(())
     }
-    async fn apply_collection_child<P: Reporter>(
+    async fn apply_basic<I, P, Opt>(
         &mut self,
         prog: &P,
-        body: &Collection,
-        child: CollectionChild,
-    ) -> Result<(), Error> {
-        self.apply_comment_container::<Collection, _>(prog, body, child.comment)
-            .await?;
-        self.apply_basic_container::<Collection, VoidOpt, Any, _>(prog, body, child.item)
-            .await
-    }
-    async fn apply_collection_container<IC: ItemContainer<O, Collection>, O, P: Reporter>(
-        &mut self,
-        prog: &P,
-        body: &IC,
-        child: Option<CollectionChild>,
-    ) -> Result<(), Error> {
-        let child = match child {
-            Some(v) => v,
-            None => return Ok(()),
-        };
-        if !body.has_item() {
-            return Ok(());
-        }
-        let roots = self
-            .apply_container::<IC, Collection, O, _>(prog, body.id())
-            .await?;
-        if child != Default::default() {
-            let prog = prog.start_item_container::<Collection, O, IC, _, _>(
-                "Processing",
-                "",
-                body.id(),
-                Some(format_args!(
-                    "{} {}",
-                    if child.comment.is_some() {
-                        "+comment"
-                    } else {
-                        ""
-                    },
-                    if child.item.is_some() { "+item" } else { "" }
-                )),
-            );
-            {
-                let mut p = prog.start_items(roots.len() as u64);
-                for i in &roots {
-                    let _p_i = ItemsProg::start_item(&mut p, Collection::TYPE, i.value.id());
-                    self.apply_collection_child(&prog, &i.value, child)
-                        .await
-                        .map_err(|e| Error::sub_container(body, e))?;
-                }
-            }
-            prog.finish("Processed", Some(roots.len()), body.id());
-        }
-        Ok(())
-    }
-    async fn apply_column_child<P: Reporter>(
-        &mut self,
-        prog: &P,
-        body: &Column,
-        child: ColumnChild,
-    ) -> Result<(), Error> {
-        self.apply_basic_container::<_, column::Pinned, Any, _>(prog, body, child.pinned)
-            .await?;
-        self.apply_basic_container::<_, column::Regular, Any, _>(prog, body, child.regular)
-            .await
-    }
-    async fn apply_column_container<IC: ItemContainer<O, Column>, O, P: Reporter>(
-        &mut self,
-        prog: &P,
-        body: &IC,
-        child: Option<ColumnChild>,
-    ) -> Result<(), Error> {
-        let child = match child {
-            Some(v) => v,
-            None => return Ok(()),
-        };
-        if !body.has_item() {
-            return Ok(());
-        }
-        let roots = self
-            .apply_container::<IC, Column, O, _>(prog, body.id())
-            .await?;
-        if child != Default::default() {
-            let prog = prog.start_item_container::<Column, O, IC, _, _>(
-                "Processing",
-                "",
-                body.id(),
-                Some(format_args!(
-                    "{} {}",
-                    if child.pinned.is_some() {
-                        "+pinned-item"
-                    } else {
-                        ""
-                    },
-                    if child.regular.is_some() {
-                        "+regular-item"
-                    } else {
-                        ""
-                    }
-                )),
-            );
-            {
-                let mut p = prog.start_items(roots.len() as u64);
-                for i in &roots {
-                    let _p_i = ItemsProg::start_item(&mut p, Column::TYPE, i.value.id());
-                    self.apply_column_child(&prog, &i.value, child)
-                        .await
-                        .map_err(|e| Error::sub_container(body, e))?;
-                }
-            }
-            prog.finish("Processed", Some(roots.len()), body.id());
-        }
-        Ok(())
-    }
-    async fn apply_question_child<P: Reporter>(
-        &mut self,
-        prog: &P,
-        body: &Question,
-        child: QuestionChild,
-    ) -> Result<(), Error> {
-        self.apply_basic_container::<Question, VoidOpt, Answer, _>(prog, body, child.answer)
-            .await?;
-        self.apply_comment_container(prog, body, child.comment)
-            .await
-    }
-    async fn apply_item<I: Fetchable + Item + BasicStoreItem, O: Default + Eq, P: Reporter>(
-        &mut self,
-        prog: &P,
-        option: O,
         id: I::Id<'_>,
-    ) -> Result<Option<I>, Error> {
+        child: Option<Opt>,
+    ) -> Result<(), Error>
+    where
+        P: Reporter,
+        I: Fetchable + Item + BasicStoreItem,
+        Opt: ApplyChild<I> + Default + Copy,
+    {
         if !<I as StoreItem>::in_store(id, &self.store).on_server {
-            return Ok(None);
+            return Ok(());
         }
         let v = self
             .get_item::<I, _>(prog, id)
@@ -306,21 +381,23 @@ impl Driver {
                 kind: I::TYPE,
                 source: e,
             })?;
-        Ok(if option == O::default() {
-            None
-        } else {
-            Some(match v {
-                Some(v) => v,
-                None => self
-                    .store
-                    .get_object::<I>(id, Default::default())
-                    .map_err(|e| Error::Load {
-                        id: id.to_string(),
-                        kind: I::TYPE,
-                        source: e,
-                    })?,
-            })
-        })
+        if let Some(child) = child {
+            if child != Opt::default() {
+                let v = match v {
+                    Some(v) => v,
+                    None => self
+                        .store
+                        .get_object::<I>(id, Default::default())
+                        .map_err(|e| Error::Load {
+                            id: id.to_string(),
+                            kind: I::TYPE,
+                            source: e,
+                        })?,
+                };
+                child.apply_child(self, prog, &v).await?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn apply_manifest_leaf<P: Reporter>(
@@ -329,79 +406,31 @@ impl Driver {
         leaf: &ManifestLeaf,
     ) -> Result<(), Error> {
         for (id, opt) in &leaf.answer {
-            if let Some(ans) = self.apply_item::<Answer, _, _>(prog, *opt, *id).await? {
-                if let Some(child) = opt.child {
-                    self.apply_basic_child(prog, &ans, child).await?;
-                }
-            }
+            self.apply_basic::<Answer, _, _>(prog, *id, opt.child)
+                .await?;
         }
         for (id, opt) in &leaf.article {
-            if let Some(art) = self.apply_item::<Article, _, _>(prog, *opt, *id).await? {
-                if let Some(child) = opt.child {
-                    self.apply_basic_child(prog, &art, child).await?;
-                }
-            }
+            self.apply_basic::<Article, _, _>(prog, *id, opt.child)
+                .await?;
         }
         for (id, opt) in &leaf.collection {
-            if let Some(col) = self.apply_item::<Collection, _, _>(prog, *opt, *id).await? {
-                if let Some(child) = opt.child {
-                    self.apply_collection_child(prog, &col, child).await?;
-                }
-            }
+            self.apply_basic::<Collection, _, _>(prog, *id, opt.child)
+                .await?;
         }
         for (id, opt) in &leaf.column {
-            if let Some(col) = self
-                .apply_item::<Column, _, _>(prog, *opt, ColumnRef(id.0.as_str()))
-                .await?
-            {
-                if let Some(child) = opt.child {
-                    self.apply_column_child(prog, &col, child).await?;
-                }
-            }
+            self.apply_basic::<Column, _, _>(prog, ColumnRef(id.0.as_str()), opt.child)
+                .await?;
         }
         for (id, opt) in &leaf.pin {
-            if let Some(p) = self.apply_item::<Pin, _, _>(prog, *opt, *id).await? {
-                if let Some(child) = opt.child {
-                    self.apply_basic_child(prog, &p, child).await?;
-                }
-            }
+            self.apply_basic::<Pin, _, _>(prog, *id, opt.child).await?;
         }
         for (id, opt) in &leaf.question {
-            if let Some(q) = self.apply_item::<Question, _, _>(prog, *opt, *id).await? {
-                if let Some(child) = opt.child {
-                    self.apply_question_child(prog, &q, child).await?;
-                }
-            }
+            self.apply_basic::<Question, _, _>(prog, *id, opt.child)
+                .await?;
         }
         for (url_token, opt) in &leaf.user {
-            let store_id = user::StoreId(opt.id, url_token.as_str());
-            if let Some(u) = self
-                .apply_item::<User, _, _>(prog, opt.child, store_id)
-                .await?
-            {
-                if let Some(child) = opt.child {
-                    self.apply_basic_container::<_, VoidOpt, Answer, _>(prog, &u, child.answer)
-                        .await?;
-                    self.apply_basic_container::<_, VoidOpt, Article, _>(prog, &u, child.article)
-                        .await?;
-                    self.apply_collection_container::<_, user::Created, _>(
-                        prog,
-                        &u,
-                        child.collection.and_then(|v| v.created),
-                    )
-                    .await?;
-                    self.apply_collection_container::<_, user::Liked, _>(
-                        prog,
-                        &u,
-                        child.collection.and_then(|v| v.liked),
-                    )
-                    .await?;
-                    self.apply_column_container::<_, VoidOpt, _>(prog, &u, child.column)
-                        .await?;
-                    self.apply_basic_container::<_, VoidOpt, Pin, _>(prog, &u, child.pin)
-                        .await?;
-                }
-            }
+            self.apply_basic(prog, user::StoreId(opt.id, url_token.as_str()), opt.child)
+                .await?;
         }
         Ok(())
     }

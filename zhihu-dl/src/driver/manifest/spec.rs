@@ -55,7 +55,8 @@ impl<K: Ord, V: Mergable> Mergable for BTreeMap<K, V> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct ItemOption<C: Serialize + serde::de::DeserializeOwned> {
+#[serde(bound = "C: Serialize + serde::de::DeserializeOwned")]
+pub struct ItemOption<C> {
     #[serde(default, with = "option", skip_serializing_if = "Option::is_none")]
     pub child: Option<C>,
 }
