@@ -523,13 +523,13 @@ impl Store {
     ) -> Result<PathBuf, storable::Error> {
         let path = self.store_path::<I>(object.id());
         object.store(&path)?;
-        I::add_info(
+        <I as StoreItem>::add_info(
             object.id(),
             info::ItemInfo {
                 in_store: true,
                 on_server,
             },
-            &mut self.objects,
+            self,
         );
         Ok(path)
     }
