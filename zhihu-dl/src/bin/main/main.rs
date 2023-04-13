@@ -342,8 +342,9 @@ fn run_cli(
     }
 
     if let Some(v) = cli.command {
-        v.run(&runtime, &mut driver, output, reporter)?;
-        return save_state(&mut driver, output);
+        let ret = v.run(&runtime, &mut driver, output, reporter);
+        save_state(&mut driver, output)?;
+        return ret.map(|_| ());
     }
     let mut editor = rustyline::Editor::<(), _>::with_history(
         rustyline::Config::builder()
