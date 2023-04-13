@@ -531,7 +531,6 @@ impl Store {
             },
             &mut self.objects,
         );
-        self.dirty = true;
         Ok(path)
     }
     pub fn add_container<'a, 'b, IC: BasicStoreContainer<O, I>, O, I: HasId>(
@@ -594,6 +593,7 @@ impl<I: BasicStoreItem> StoreItem for I {
     }
     fn add_info(id: Self::Id<'_>, info: info::ItemInfo, store: &mut Store) {
         <Self as BasicStoreItem>::add_info(id, info, &mut store.objects);
+        store.dirty = true;
     }
     fn save_data(
         &self,

@@ -373,14 +373,30 @@ impl Driver {
         if !<I as StoreItem>::in_store(id, &self.store).on_server {
             return Ok(());
         }
-        let v = self
-            .get_item::<I, _>(prog, id)
-            .await
-            .map_err(|e| Error::Item {
-                id: id.to_string(),
-                kind: I::TYPE,
-                source: e,
-            })?;
+        let v = match self.get_item::<I, _>(prog, id).await {
+            Ok(v) => v,
+            Err(e) => {
+                if e.is_not_found() {
+                    <I as StoreItem>::add_info(
+                        id,
+                        {
+                            let mut i = <I as StoreItem>::in_store(id, &self.store);
+                            i.on_server = false;
+                            i
+                        },
+                        &mut self.store,
+                    );
+                    log::error!("not found {} {}: {:?}", I::TYPE, id, anyhow::Error::new(e));
+                    return Ok(());
+                } else {
+                    return Err(Error::Item {
+                        id: id.to_string(),
+                        kind: I::TYPE,
+                        source: e,
+                    });
+                }
+            }
+        };
         if let Some(child) = child {
             if child != Opt::default() {
                 let v = match v {

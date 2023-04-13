@@ -50,6 +50,15 @@ pub enum ItemError {
         source: LinkError,
     },
 }
+impl ItemError {
+    pub(super) fn is_not_found(&self) -> bool {
+        if let Self::Http(e) = self {
+            e.status() == Some(reqwest::StatusCode::NOT_FOUND)
+        } else {
+            false
+        }
+    }
+}
 
 impl Driver {
     pub(super) async fn process_item<I: Item, P: progress::ItemProg>(
