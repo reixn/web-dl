@@ -442,7 +442,7 @@ pub struct Timings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     pub client_addr: SocketAddr,
-    pub server_addr: SocketAddr,
+    pub server_addr: Option<SocketAddr>,
     pub timings: Timings,
     pub request: request::Request,
     pub response: response::Response,

@@ -281,13 +281,32 @@ impl<'a> Response<'a> {
         })
     }
 }
+
+#[derive(FromPyObject)]
+enum Addr<'a> {
+    Short((&'a str, u16)),
+    Long((&'a str, u16, &'a pyo3::PyAny, &'a pyo3::PyAny)),
+}
+impl<'a> Addr<'a> {
+    fn to_addr(&self) -> anyhow::Result<std::net::SocketAddr> {
+        let (a, p) = match self {
+            Self::Short(ap) => *ap,
+            Self::Long((a, p, _, _)) => (*a, *p),
+        };
+        Ok(std::net::SocketAddr::new(
+            a.parse().context("failed to parse address")?,
+            p,
+        ))
+    }
+}
+
 #[derive(FromPyObject)]
 struct Client<'a> {
-    peername: (&'a str, u16),
+    peername: Addr<'a>,
 }
 #[derive(FromPyObject)]
 struct Server<'a> {
-    peername: (&'a str, u16),
+    peername: Option<Addr<'a>>,
 }
 #[derive(FromPyObject)]
 pub struct Flow<'a> {
@@ -301,22 +320,11 @@ impl<'a> Flow<'a> {
         use chrono::TimeZone;
         let utc = chrono::Utc;
         Ok(http_recorder::Entry {
-            client_addr: std::net::SocketAddr::new(
-                self.client_conn
-                    .peername
-                    .0
-                    .parse()
-                    .context("failed to parse client address")?,
-                self.client_conn.peername.1,
-            ),
-            server_addr: std::net::SocketAddr::new(
-                self.server_conn
-                    .peername
-                    .0
-                    .parse()
-                    .context("failed to parse server address")?,
-                self.server_conn.peername.1,
-            ),
+            client_addr: self.client_conn.peername.to_addr()?,
+            server_addr: match self.server_conn.peername {
+                Some(a) => Some(a.to_addr()?),
+                None => None,
+            },
             timings: http_recorder::Timings {
                 start_time: utc
                     .timestamp_nanos((self.request.timestamp_start * 1_000_000_000f64) as i64),
@@ -404,7 +412,10 @@ impl Saver {
             .context("failed to seek old file to begin")?;
         self.old_file
             .set_len(0)
-            .context("failed to set old file len")
+            .context("failed to set old file len")?;
+
+        log::info!("saved tmp data to {}", self.active_path.display());
+        Ok(())
     }
     fn run(mut self) {
         while {
