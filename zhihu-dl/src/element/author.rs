@@ -7,7 +7,7 @@ use std::{
     fmt::{Debug, Display},
     str::FromStr,
 };
-use web_dl_base::utils::bytes;
+use web_dl_util::bytes;
 
 pub const VERSION: Version = Version { major: 1, minor: 1 };
 

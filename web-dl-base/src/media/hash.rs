@@ -1,6 +1,6 @@
-use crate::utils::bytes;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use web_dl_util::bytes;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash, Serialize, Deserialize)]
 #[serde(tag = "algo", content = "hash")]
