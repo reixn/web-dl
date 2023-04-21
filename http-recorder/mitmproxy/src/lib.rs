@@ -90,7 +90,6 @@ struct Request<'a> {
     method: &'a str,
     url: &'a str,
     headers: Headers<'a>,
-    cookies: Vec<(&'a str, &'a str)>,
     content: Option<&'a [u8]>,
 }
 impl<'a> Request<'a> {
@@ -124,14 +123,28 @@ impl<'a> Request<'a> {
                         .collect(),
                 }
             },
-            cookies: self
-                .cookies
-                .iter()
-                .map(|(k, v)| request::Cookie {
-                    name: k.to_string(),
-                    value: v.to_string(),
-                })
-                .collect(),
+            cookies: {
+                let mut ret = Vec::new();
+                for h in headers.iter() {
+                    if h.name == header::COOKIE {
+                        let s = match &h.value {
+                            header::HeaderValue::Text(s) => s.as_str(),
+                            header::HeaderValue::Binary(_) => {
+                                anyhow::bail!("invalid cookie vale: binary data")
+                            }
+                        };
+                        for c in s.split("; ") {
+                            let cok = cookie::Cookie::parse_encoded(c)
+                                .context("failed to parse cookie")?;
+                            ret.push(request::Cookie {
+                                name: cok.name().to_string(),
+                                value: cok.value().to_string(),
+                            });
+                        }
+                    }
+                }
+                ret
+            },
             body: match self.content {
                 Some([]) => None,
                 Some(content) => {
