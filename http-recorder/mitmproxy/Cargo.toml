@@ -1,0 +1,31 @@
+[package]
+name = "http-recorder-mitmproxy"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.70"
+chrono = "0.4.24"
+http-recorder = { path = "../type" }
+multer = "2.1.0"
+pyo3 = { version = "0.18.3", features = ["anyhow"] }
+url = "2.3.1"
+mime = "0.3.17"
+sha2 = "0.10.6"
+cookie = { version = "0.17.0", features = ["percent-encode"] }
+mime2ext = "0.1.52"
+http = "0.2.9"
+mime-sniffer = "0.1.2"
+futures-util = "0.3.28"
+futures = "0.3.28"
+bytes = "1.4.0"
+ciborium = "0.2.0"
+xz2 = { version = "0.1.7", features = ["static"] }
+tempfile = "3.5.0"
+pyo3-log = "0.8.1"
+log = "0.4.17"
+
+[lib]
+crate-type = ["cdylib"]
