@@ -540,7 +540,18 @@ pub enum HeaderName {
     Standard(StandardHeader),
     Custom(Box<str>),
 }
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct InvalidHeaderName(http::header::InvalidHeaderName);
+
 impl HeaderName {
+    pub fn parse(name: &[u8]) -> Result<Self, InvalidHeaderName> {
+        Ok(Self::from_lower(
+            http::HeaderName::from_bytes(name)
+                .map_err(InvalidHeaderName)?
+                .as_str(),
+        ))
+    }
     pub fn from_lower(data: &str) -> Self {
         match StandardHeader::from_lower(data) {
             Some(v) => Self::Standard(v),

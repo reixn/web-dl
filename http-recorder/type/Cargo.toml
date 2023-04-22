@@ -13,3 +13,16 @@ serde_json = "1.0.96"
 tar = "0.4.38"
 web_dl_util = { path = "../../web-dl-util" }
 base16 = "0.2.1"
+
+http = "0.2.9"
+url = "2.3.1"
+mime2ext = "0.1.52"
+mime-sniffer = "0.1.2"
+futures-util = "0.3.28"
+futures = "0.3.28"
+bytes = "1.4.0"
+multer = "2.1.0"
+sha2 = "0.10.6"
+cookie = { version = "0.17.0", features = ["percent-encode"] }
+thiserror = "1.0.40"
+time = "0.3.20"

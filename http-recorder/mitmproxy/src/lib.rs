@@ -1,7 +1,6 @@
 #![feature(iterator_try_collect)]
 
 use anyhow::Context;
-use http_recorder::{header, request, response};
 use pyo3::{pyclass, pymethods, pymodule, FromPyObject};
 use std::{
     fs, io,
@@ -13,76 +12,6 @@ use std::{
 struct Headers<'a> {
     fields: Vec<(&'a [u8], &'a [u8])>,
 }
-impl<'a> Headers<'a> {
-    fn to_headers(&self) -> anyhow::Result<http_recorder::Headers> {
-        self.fields
-            .iter()
-            .map(|(k, v)| -> anyhow::Result<http_recorder::Header> {
-                Ok(http_recorder::Header {
-                    name: header::HeaderName::from_lower(
-                        http::HeaderName::from_bytes(*k)
-                            .context("failed to parse header name")?
-                            .as_str(),
-                    ),
-                    value: {
-                        let v = http::HeaderValue::from_bytes(*v)
-                            .context("failed to parse header value")?;
-                        match v.to_str() {
-                            Ok(s) => header::HeaderValue::Text(s.to_string()),
-                            Err(_) => header::HeaderValue::Binary(
-                                v.as_bytes().to_owned().into_boxed_slice(),
-                            ),
-                        }
-                    },
-                })
-            })
-            .try_collect()
-    }
-}
-
-fn get_content_type(
-    headers: &http_recorder::Headers,
-    url: &str,
-    content: &[u8],
-) -> anyhow::Result<mime::Mime> {
-    use mime_sniffer::MimeTypeSnifferExt;
-    Ok(
-        match headers.iter().find(|v| v.name == header::CONTENT_TYPE) {
-            Some(v) => match &v.value {
-                header::HeaderValue::Text(t) => mime_sniffer::HttpRequest {
-                    url: &url,
-                    content: &content,
-                    type_hint: t,
-                }
-                .sniff_mime_type_ext(),
-                header::HeaderValue::Binary(_) => {
-                    anyhow::bail!("invalid Content-Type value: binary data")
-                }
-            },
-            None => mime_sniffer::HttpRequest {
-                url: &url,
-                content: &content,
-                type_hint: mime::APPLICATION_OCTET_STREAM.as_ref(),
-            }
-            .sniff_mime_type_ext(),
-        }
-        .unwrap_or(mime::APPLICATION_OCTET_STREAM),
-    )
-}
-fn to_content(content_type: mime::Mime, content: &[u8]) -> http_recorder::Content {
-    use sha2::{digest::FixedOutput, Digest, Sha256};
-    http_recorder::Content {
-        digest: {
-            http_recorder::Digest::SHA256(http_recorder::Bytes(
-                Sha256::new_with_prefix(content).finalize_fixed().into(),
-            ))
-        },
-        extension: mime2ext::mime2ext(&content_type).map(|v| v.to_string()),
-        content_type,
-        data: Some(content.to_owned().into_boxed_slice()),
-    }
-}
-
 #[derive(FromPyObject)]
 struct Request<'a> {
     timestamp_start: f64,
@@ -93,137 +22,17 @@ struct Request<'a> {
     content: Option<&'a [u8]>,
 }
 impl<'a> Request<'a> {
-    fn to_request(&self) -> anyhow::Result<request::Request> {
-        let headers = self.headers.to_headers()?;
-        Ok(request::Request {
-            http_version: self
-                .http_version
-                .parse()
-                .context("failed to parse request http version")?,
-            method: self.method.parse().unwrap(),
-            url: {
-                let u = url::Url::parse(self.url)
-                    .with_context(|| format!("failed to parse request url: {}", self.url))?;
-                request::Url {
-                    url_text: self.url.to_owned(),
-                    scheme: u.scheme().to_owned(),
-                    host: u.host().map(|h| match h {
-                        url::Host::Domain(d) => request::Host::Domain(d.to_owned()),
-                        url::Host::Ipv4(a) => request::Host::Addr(std::net::IpAddr::V4(a)),
-                        url::Host::Ipv6(a) => request::Host::Addr(std::net::IpAddr::V6(a)),
-                    }),
-                    port: u.port(),
-                    path: u.path().to_owned(),
-                    query: u
-                        .query_pairs()
-                        .map(|(k, v)| http_recorder::QueryString {
-                            name: k.to_string(),
-                            value: v.to_string(),
-                        })
-                        .collect(),
-                }
-            },
-            cookies: {
-                let mut ret = Vec::new();
-                for h in headers.iter() {
-                    if h.name == header::COOKIE {
-                        let s = match &h.value {
-                            header::HeaderValue::Text(s) => s.as_str(),
-                            header::HeaderValue::Binary(_) => {
-                                anyhow::bail!("invalid cookie vale: binary data")
-                            }
-                        };
-                        for c in s.split("; ") {
-                            let cok = cookie::Cookie::parse_encoded(c)
-                                .context("failed to parse cookie")?;
-                            ret.push(request::Cookie {
-                                name: cok.name().to_string(),
-                                value: cok.value().to_string(),
-                            });
-                        }
-                    }
-                }
-                ret
-            },
-            body: match self.content {
-                Some([]) => None,
-                Some(content) => {
-                    let content_type = get_content_type(&headers, self.url, content)?;
-                    Some(if content_type == mime::APPLICATION_WWW_FORM_URLENCODED {
-                        request::Body::UrlEncodedForm(
-                            url::form_urlencoded::parse(content)
-                                .map(|(k, v)| request::UrlEncodedFormEntry {
-                                    name: k.to_string(),
-                                    value: v.to_string(),
-                                })
-                                .collect(),
-                        )
-                    } else if content_type == mime::MULTIPART_FORM_DATA {
-                        let mut parser = multer::Multipart::new::<_, _, std::convert::Infallible, _>(
-                            futures_util::stream::once(std::future::ready(Ok(
-                                bytes::Bytes::copy_from_slice(content),
-                            ))),
-                            multer::parse_boundary(content_type)
-                                .context("failed to parse request multipart body boundary")?,
-                        );
-                        let mut ret = Vec::new();
-                        while let Some(f) = futures::executor::block_on(parser.next_field())
-                            .context("failed to get multipart form field")?
-                        {
-                            ret.push(request::MultipartFormEntry {
-                                name: f.name().map(str::to_string),
-                                file_name: f.file_name().map(str::to_string),
-                                headers: f
-                                    .headers()
-                                    .iter()
-                                    .map(|(k, v)| http_recorder::Header {
-                                        name: header::HeaderName::from_lower(k.as_str()),
-                                        value: match v.to_str() {
-                                            Ok(s) => header::HeaderValue::Text(s.to_string()),
-                                            Err(_) => header::HeaderValue::Binary(
-                                                v.as_bytes().to_vec().into_boxed_slice(),
-                                            ),
-                                        },
-                                    })
-                                    .collect(),
-                                content: {
-                                    use mime_sniffer::MimeTypeSnifferExt;
-                                    let content_type = f.content_type().cloned();
-                                    let content = futures::executor::block_on(f.bytes())
-                                        .context("failed to parse multipart body bytes")?;
-                                    to_content(
-                                        match content_type {
-                                            Some(ct) => mime_sniffer::HttpRequest {
-                                                url: &self.url,
-                                                content: &content,
-                                                type_hint: ct.as_ref(),
-                                            }
-                                            .sniff_mime_type_ext(),
-                                            None => mime_sniffer::HttpRequest {
-                                                url: &self.url,
-                                                content: &content,
-                                                type_hint: mime::APPLICATION_OCTET_STREAM.as_ref(),
-                                            }
-                                            .sniff_mime_type_ext(),
-                                        }
-                                        .unwrap_or(mime::APPLICATION_OCTET_STREAM),
-                                        content.as_ref(),
-                                    )
-                                },
-                            })
-                        }
-                        request::Body::MultipartForm(ret)
-                    } else {
-                        request::Body::Content(to_content(content_type, content))
-                    })
-                }
-                None => None,
-            },
-            headers,
-        })
+    fn into_request(self) -> anyhow::Result<http_recorder::Request> {
+        http_recorder::Request::parse(
+            self.http_version,
+            self.method,
+            self.url,
+            self.headers.fields.into_iter(),
+            self.content,
+        )
+        .context("failed to parse request")
     }
 }
-
 #[derive(FromPyObject)]
 struct Response<'a> {
     timestamp_end: f64,
@@ -233,65 +42,15 @@ struct Response<'a> {
     content: Option<&'a [u8]>,
 }
 impl<'a> Response<'a> {
-    fn to_response(&self, url: &str) -> anyhow::Result<response::Response> {
-        let headers = self.headers.to_headers()?;
-        Ok(response::Response {
-            http_version: self
-                .http_version
-                .parse()
-                .context("failed to parse response http version")?,
-            status: http_recorder::StatusCode(self.status_code),
-            cookies: headers
-                .iter()
-                .filter(|v| v.name == header::SET_COOKIE)
-                .map(|v| {
-                    let cok = cookie::Cookie::parse_encoded(
-                        if let header::HeaderValue::Text(s) = &v.value {
-                            s.as_str()
-                        } else {
-                            anyhow::bail!("invalid Set-Cookie header: binary value")
-                        },
-                    )
-                    .context("failed to parse response cookie")?;
-                    Ok(response::Cookie {
-                        name: cok.name().to_owned(),
-                        value: cok.value().to_owned(),
-                        domain: cok.domain().map(str::to_string),
-                        path: cok.path().map(str::to_string),
-                        http_only: cok.http_only(),
-                        secure: cok.secure(),
-                        same_site: cok.same_site().map(|v| match v {
-                            cookie::SameSite::Lax => response::SameSite::Lax,
-                            cookie::SameSite::None => response::SameSite::None,
-                            cookie::SameSite::Strict => response::SameSite::Strict,
-                        }),
-                        max_age: match cok.max_age() {
-                            Some(d) => {
-                                Some(std::time::Duration::try_from(d).context("invalud max age")?)
-                            }
-                            None => None,
-                        },
-                        expires: cok.expires().map(|v| match v {
-                            cookie::Expiration::DateTime(d) => response::Expiration::DateTime({
-                                use chrono::TimeZone;
-                                let u = chrono::Utc;
-                                u.timestamp_nanos(d.unix_timestamp_nanos() as i64)
-                            }),
-                            cookie::Expiration::Session => response::Expiration::Session,
-                        }),
-                    })
-                })
-                .try_collect()?,
-            content: match self.content {
-                Some([]) => None,
-                Some(content) => Some(to_content(
-                    get_content_type(&headers, url, content)?,
-                    content,
-                )),
-                None => None,
-            },
-            headers,
-        })
+    fn into_response(self, url: &str) -> anyhow::Result<http_recorder::Response> {
+        http_recorder::Response::parse(
+            self.http_version,
+            self.status_code,
+            url,
+            self.headers.fields.into_iter(),
+            self.content,
+        )
+        .context("failed to parse response")
     }
 }
 
@@ -344,8 +103,8 @@ impl<'a> Flow<'a> {
                 finish_time: utc
                     .timestamp_nanos((self.response.timestamp_end * 1000_000_000f64) as i64),
             },
-            response: self.response.to_response(self.request.url)?,
-            request: self.request.to_request()?,
+            response: self.response.into_response(self.request.url)?,
+            request: self.request.into_request()?,
         })
     }
 }
