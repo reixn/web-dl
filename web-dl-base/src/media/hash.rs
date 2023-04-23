@@ -1,12 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use web_dl_util::bytes;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash, Serialize, Deserialize)]
 #[serde(tag = "algo", content = "hash")]
 pub enum HashDigest {
     #[serde(rename = "sha256")]
-    Sha256(#[serde(with = "bytes")] [u8; 32]),
+    Sha256(#[serde(with = "hex::serde")] [u8; 32]),
 }
 impl HashDigest {
     pub fn store_path(&self, parent: &Path, extension: &str) -> PathBuf {

@@ -7,7 +7,6 @@ use std::{
     fmt::{Debug, Display},
     str::FromStr,
 };
-use web_dl_util::bytes;
 
 pub const VERSION: Version = Version { major: 1, minor: 1 };
 
@@ -36,21 +35,21 @@ impl<'de> Deserialize<'de> for FromRaw<UserType> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct UserId(#[serde(with = "bytes")] pub [u8; 16]);
+pub struct UserId(#[serde(with = "hex::serde")] pub [u8; 16]);
 impl Debug for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        bytes::fmt(&self.0, f)
+        f.write_str(hex::encode(&self.0).as_str())
     }
 }
 impl Display for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        bytes::fmt(&self.0, f)
+        f.write_str(hex::encode(&self.0).as_str())
     }
 }
 impl FromStr for UserId {
-    type Err = bytes::DecodeError;
+    type Err = hex::FromHexError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        bytes::decode_bytes(s).map(UserId)
+        Ok(Self(hex::FromHex::from_hex(s.as_bytes())?))
     }
 }
 
@@ -72,7 +71,7 @@ impl<'de> Deserialize<'de> for FromRaw<Option<UserId>> {
                 if v == "0" {
                     return Ok(FromRaw(None));
                 }
-                match bytes::decode_bytes(v) {
+                match hex::FromHex::from_hex(v.as_bytes()) {
                     Ok(d) => Ok(FromRaw(Some(UserId(d)))),
                     Err(e) => Err(de::Error::custom(e)),
                 }

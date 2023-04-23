@@ -18,7 +18,7 @@ reqwest = { version = "0.11.15", default-features = false, features = [
 ] }
 sha2 = "0.10.6"
 web_dl_derive = { path = "../web-dl-derive" }
-web_dl_util = { path = "../web-dl-util" }
 thiserror = "1.0.40"
 ron = "0.8.0"
 anyhow = "1.0.70"
+hex = { version = "0.4.3", features = ["serde"] }

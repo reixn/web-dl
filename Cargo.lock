@@ -818,6 +818,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fed44880c466736ef9a5c5b5facefb5ed0785676d0c02d612db14e54f0d84286"
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "hex-literal"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2455,6 +2464,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base16",
+ "hex",
  "log",
  "mime2ext",
  "mime_classifier",
@@ -2466,7 +2476,6 @@ dependencies = [
  "sha2",
  "thiserror",
  "web_dl_derive",
- "web_dl_util",
 ]
 
 [[package]]
@@ -2477,14 +2486,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "web_dl_util"
-version = "0.1.0"
-dependencies = [
- "base16",
- "serde",
 ]
 
 [[package]]
@@ -2653,6 +2654,7 @@ dependencies = [
  "clap",
  "ego-tree",
  "env_logger",
+ "hex",
  "hex-literal",
  "html5ever",
  "indicatif",
@@ -2679,7 +2681,6 @@ dependencies = [
  "tokio",
  "url",
  "web_dl_base",
- "web_dl_util",
  "yansi",
  "zhihu-dl-derive",
 ]
