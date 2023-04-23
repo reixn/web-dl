@@ -2,8 +2,6 @@
 members = [
   "web-dl-util",
   "web-dl-base",
-  "http-recorder/type",
-  "http-recorder/mitmproxy",
   "web-dl-derive",
   "zhihu-dl-derive",
   "zhihu-dl",
