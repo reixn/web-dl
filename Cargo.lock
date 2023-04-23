@@ -2651,7 +2651,6 @@ dependencies = [
  "async-recursion",
  "base16",
  "chrono",
- "clap",
  "ego-tree",
  "env_logger",
  "hex",
@@ -2665,11 +2664,28 @@ dependencies = [
  "reqwest",
  "reqwest_cookie_store",
  "ron",
- "rustyline",
  "scraper",
  "serde",
  "serde_json",
  "serde_yaml",
+ "thiserror",
+ "tokio",
+ "url",
+ "web_dl_base",
+ "yansi",
+ "zhihu-dl-derive",
+]
+
+[[package]]
+name = "zhihu-dl-cli"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "indicatif",
+ "ron",
+ "rustyline",
+ "serde_json",
  "shlex",
  "slog",
  "slog-envlogger",
@@ -2677,12 +2693,9 @@ dependencies = [
  "slog-stdlog",
  "slog-term",
  "termcolor",
- "thiserror",
  "tokio",
- "url",
  "web_dl_base",
- "yansi",
- "zhihu-dl-derive",
+ "zhihu-dl",
 ]
 
 [[package]]
