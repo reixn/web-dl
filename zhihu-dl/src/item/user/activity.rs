@@ -23,7 +23,7 @@ use std::{
     fmt::Display,
     path::{Path, PathBuf},
 };
-use web_dl_base::{id::HasId, media::StoreImage};
+use web_dl_base::id::HasId;
 
 type Id<'a, S> = <S as HasId>::Id<'a>;
 
@@ -63,38 +63,14 @@ impl<'a> Display for ActivityId<'a> {
     }
 }
 
-#[derive(Debug, StoreImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, HasContent, Serialize, Deserialize)]
 pub enum ActTarget {
-    Answer(
-        #[has_image]
-        #[content(main)]
-        Answer,
-    ),
-    Article(
-        #[has_image]
-        #[content(main)]
-        Article,
-    ),
-    Collection(
-        #[has_image]
-        #[content(main)]
-        Collection,
-    ),
-    Column(
-        #[has_image]
-        #[content(main)]
-        Column,
-    ),
-    Pin(
-        #[has_image]
-        #[content(main)]
-        Pin,
-    ),
-    Question(
-        #[has_image]
-        #[content(main)]
-        Question,
-    ),
+    Answer(#[content(main)] Answer),
+    Article(#[content(main)] Article),
+    Collection(#[content(main)] Collection),
+    Column(#[content(main)] Column),
+    Pin(#[content(main)] Pin),
+    Question(#[content(main)] Question),
     Other(OtherItem),
 }
 
@@ -122,10 +98,9 @@ pub struct Reply {
     target: TargetReply,
 }
 
-#[derive(Debug, StoreImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, HasContent, Serialize, Deserialize)]
 pub struct Activity {
     pub id: u64,
-    #[has_image(path = "flatten")]
     #[content(main)]
     pub target: ActTarget,
 }
@@ -211,6 +186,17 @@ impl StoreItem for Activity {
             };
         }
         id_targets!(id_v, id.target)
+    }
+    fn add_media(&self, store: &mut Store) -> Result<(), web_dl_base::media::Error> {
+        macro_rules! id_v {
+            ($i:tt) => {
+                Ok(())
+            };
+            ($t:tt, $i:tt) => {
+                $i.add_media(store)
+            };
+        }
+        targets!(id_v, &self.target)
     }
     fn save_data(
         &self,

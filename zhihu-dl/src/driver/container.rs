@@ -127,8 +127,7 @@ impl Driver {
                 {
                     log::debug!("store path: {}", v.display());
                 }
-                self.store
-                    .add_media(&item)
+                item.add_media(&mut self.store)
                     .map_err(|e| ContainerError::Item {
                         id: item.id().to_string(),
                         source: ItemError::Media(e),

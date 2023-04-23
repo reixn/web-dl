@@ -188,7 +188,7 @@ fn item_path<I: HasId, P: AsRef<Path>>(id: I::Id<'_>, path: P) -> PathBuf {
     path.push(id.to_string());
     path
 }
-pub trait BasicStoreItem: HasId + storable::Storable {
+pub trait BasicStoreItem: HasId + storable::Storable + media::StoreImage {
     fn in_store(id: Self::Id<'_>, store: &ObjectInfo) -> info::ItemInfo;
     fn add_info(id: Self::Id<'_>, info: info::ItemInfo, store: &mut ObjectInfo);
 }
@@ -426,7 +426,7 @@ impl Store {
         )
     }
 
-    pub fn add_media<I: HasId + media::StoreImage>(
+    pub fn add_media<I: BasicStoreItem + media::StoreImage>(
         &mut self,
         data: &I,
     ) -> Result<(), media::Error> {
@@ -484,6 +484,7 @@ pub trait StoreItem: HasId {
     fn in_store(id: Self::Id<'_>, store: &Store) -> info::ItemInfo;
     fn add_info(id: Self::Id<'_>, info: info::ItemInfo, store: &mut Store);
     fn link_info<P: AsRef<Path>>(id: Self::Id<'_>, store: &Store, dest: P) -> Option<LinkInfo>;
+    fn add_media(&self, store: &mut Store) -> Result<(), media::Error>;
     fn save_data(
         &self,
         on_server: bool,
@@ -510,6 +511,9 @@ impl<I: BasicStoreItem> StoreItem for I {
     fn add_info(id: Self::Id<'_>, info: info::ItemInfo, store: &mut Store) {
         <Self as BasicStoreItem>::add_info(id, info, &mut store.objects);
         store.dirty = true;
+    }
+    fn add_media(&self, store: &mut Store) -> Result<(), media::Error> {
+        store.add_media(self)
     }
     fn save_data(
         &self,

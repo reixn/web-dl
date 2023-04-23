@@ -3,7 +3,7 @@ use std::fmt;
 use super::types::*;
 use anyhow::Context;
 use clap::{Args, Subcommand};
-use web_dl_base::{id::OwnedId, media};
+use web_dl_base::id::OwnedId;
 use zhihu_dl::{
     driver::Driver,
     item::{
@@ -40,7 +40,7 @@ impl<Id: Args> ContainerOper<Id> {
         prog: &ProgressReporter,
     ) -> Result<(), anyhow::Error>
     where
-        I: Item + media::StoreImage + store::StoreItem,
+        I: Item + store::StoreItem,
         Id: OwnedId<IC>,
         IC: ItemContainer<O, I>,
     {

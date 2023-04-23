@@ -13,7 +13,7 @@ use std::{
     fmt::Display,
     path::{Path, PathBuf},
 };
-use web_dl_base::{id::HasId, media::StoreImage};
+use web_dl_base::id::HasId;
 
 use super::ItemContainer;
 
@@ -36,18 +36,10 @@ impl<'a> Display for AnyId<'a> {
     }
 }
 
-#[derive(Debug, HasContent, StoreImage, Serialize, Deserialize)]
+#[derive(Debug, HasContent, Serialize, Deserialize)]
 pub enum Any {
-    Answer(
-        #[has_image]
-        #[content(main)]
-        answer::Answer,
-    ),
-    Article(
-        #[has_image]
-        #[content(main)]
-        article::Article,
-    ),
+    Answer(#[content(main)] answer::Answer),
+    Article(#[content(main)] article::Article),
     Other(OtherItem),
 }
 impl HasId for Any {
@@ -89,6 +81,13 @@ impl StoreItem for Any {
                 i.warn();
                 None
             }
+        }
+    }
+    fn add_media(&self, store: &mut store::Store) -> Result<(), web_dl_base::media::Error> {
+        match self {
+            Any::Answer(a) => a.add_media(store),
+            Any::Article(a) => a.add_media(store),
+            Any::Other(_) => Ok(()),
         }
     }
     fn save_data(

@@ -1,9 +1,9 @@
 extern crate proc_macro;
 
-use darling::{FromAttributes, FromField, FromMeta, FromVariant, ToTokens};
+use darling::{FromAttributes, FromField, FromMeta, ToTokens};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Fields, Ident, Index};
+use quote::quote;
+use syn::{Data, DeriveInput, Fields, Ident};
 
 #[derive(Clone, Copy, Default, FromMeta)]
 enum StorePath {
@@ -93,49 +93,6 @@ fn gen_drops(info: &[FieldInfo]) -> TokenStream {
         ret.extend(quote! { #expr.drop_images(); });
     }
     ret
-}
-
-struct VariantInfo {
-    ident: Ident,
-    complete: bool,
-    match_ident: TokenStream,
-    match_expr: Ident,
-}
-enum VarientSpec {
-    Ignore,
-    Single(VariantInfo),
-}
-impl FromVariant for VarientSpec {
-    fn from_variant(variant: &syn::Variant) -> darling::Result<Self> {
-        let mut ret = None;
-        for (idx, f) in variant.fields.iter().enumerate() {
-            if f.attrs
-                .iter()
-                .any(|e| e.path.to_token_stream().to_string() == "has_image")
-            {
-                match ret {
-                    Some(_) => panic!("one varient with one field that has image is supported"),
-                    None => {
-                        ret = Some(match &f.ident {
-                            Some(i) => VariantInfo {
-                                ident: variant.ident.clone(),
-                                complete: variant.fields.len() == 1,
-                                match_ident: i.to_token_stream(),
-                                match_expr: i.clone(),
-                            },
-                            None => VariantInfo {
-                                ident: variant.ident.clone(),
-                                complete: variant.fields.len() == 1,
-                                match_ident: Index::from(idx).to_token_stream(),
-                                match_expr: format_ident!("__field_{}", idx),
-                            },
-                        })
-                    }
-                }
-            }
-        }
-        Ok(ret.map_or(Self::Ignore, Self::Single))
-    }
 }
 
 fn gen_impl(
@@ -253,66 +210,7 @@ pub fn derive_store_image(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 gen_drops(&s),
             )
         }
-        Data::Enum(e) => {
-            let ok = {
-                let res = support!(Result);
-                quote!(#res::Ok(()))
-            };
-            let vs: Vec<VariantInfo> = e
-                .variants
-                .iter()
-                .filter_map(|v| match VarientSpec::from_variant(v).unwrap() {
-                    VarientSpec::Ignore => None,
-                    VarientSpec::Single(s) => Some(s),
-                })
-                .collect();
-            if vs.is_empty() {
-                return gen_impl(
-                    input.ident,
-                    ok.clone(),
-                    ok.clone(),
-                    ok.clone(),
-                    TokenStream::new(),
-                );
-            }
-            let mut load_stmt = TokenStream::new();
-            let mut migrate_stmt = TokenStream::new();
-            let mut store_stmt = TokenStream::new();
-            let mut drop_stmt = TokenStream::new();
-            for VariantInfo {
-                ident,
-                complete,
-                match_ident,
-                match_expr,
-            } in vs.iter()
-            {
-                let mat = if *complete {
-                    quote!(Self::#ident { #match_ident: #match_expr } )
-                } else {
-                    quote!(Self::#ident { #match_ident: #match_expr, .. })
-                };
-                let name = ident.to_string();
-                load_stmt.extend(quote!(#mat => #load_chained(#match_expr, path, #name),));
-                migrate_stmt.extend(
-                    quote!(#mat => #migrate_chained(#match_expr, image_store, path, #name),),
-                );
-                store_stmt.extend(quote!(#mat => #store_chained(#match_expr,  path, #name),));
-                drop_stmt.extend(quote!(#mat => #match_expr.drop_images(),));
-            }
-            if vs.len() != e.variants.len() {
-                load_stmt.extend(quote!(_ => #ok));
-                migrate_stmt.extend(quote!(_ => #ok));
-                store_stmt.extend(quote!(_ => #ok));
-                drop_stmt.extend(quote!(_ => ()));
-            }
-            gen_impl(
-                input.ident,
-                quote!(match self { #load_stmt }),
-                quote!(match self {#migrate_stmt}),
-                quote!(match self {#store_stmt}),
-                quote!(match self {#drop_stmt}),
-            )
-        }
+        Data::Enum(_) => panic!("derive StoreImage for enum is not supported"),
         Data::Union(_) => panic!("derive StoreImage for union is not supported"),
     }
 }
