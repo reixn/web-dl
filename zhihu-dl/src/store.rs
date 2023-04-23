@@ -1,18 +1,9 @@
 use crate::{
-    item::{
-        answer::{Answer, AnswerId},
-        article::{Article, ArticleId},
-        collection::{Collection, CollectionId},
-        column::{Column, ColumnId},
-        pin::{Pin, PinId},
-        question::{Question, QuestionId},
-        user::{User, UserId},
-    },
+    item::{self},
     meta::Version,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
-    collections::BTreeSet,
     fmt::Display,
     fs, io,
     marker::PhantomData,
@@ -221,22 +212,43 @@ macro_rules! basic_store_item {
     };
 }
 
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 pub struct Store {
     version: Version,
     dirty: bool,
     root: PathBuf,
     pub(crate) objects: ObjectInfo,
-    media_storer: media::Storer,
-    media_loader: media::Loader,
 }
 const WEBSITE: &str = "zhihu.com";
 const OBJECT_INFO: &str = "objects.yaml";
-const IMAGE_DIR: &str = "images";
 const VERSION_FILE: &str = "version.yaml";
+
+#[derive(Debug, thiserror::Error)]
+pub enum MigrateError {
+    #[error("failed to open store")]
+    OpenStore(#[source] StoreError),
+    #[error("unexpected store version {0}, expect {}", Version{major:1,minor:0})]
+    Version(Version),
+    #[error("failed to load object {kind} {id}")]
+    LoadObject {
+        kind: &'static str,
+        id: String,
+        #[source]
+        source: storable::Error,
+    },
+    #[error("failed to migrate image of {kind} {id}")]
+    Image {
+        kind: &'static str,
+        id: String,
+        #[source]
+        source: media::Error,
+    },
+    #[error("failed to save store state")]
+    SaveStore(#[source] StoreError),
+}
 impl Store {
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Self, StoreError> {
-        let (root, image_dir) = {
+        let root = {
             fs::create_dir_all(path.as_ref()).map_err(|e| StoreError::Fs {
                 op: FsErrorOp::CreateDir,
                 path: path.as_ref().to_path_buf(),
@@ -247,7 +259,7 @@ impl Store {
                 path: path.as_ref().to_path_buf(),
                 source: e,
             })?;
-            (path.join(WEBSITE), path.join(IMAGE_DIR))
+            path.join(WEBSITE)
         };
         fs::create_dir(&root).map_err(|e| StoreError::Fs {
             op: FsErrorOp::CreateDir,
@@ -265,30 +277,17 @@ impl Store {
                 store_yaml(&ret, root.as_path(), OBJECT_INFO)?;
                 ret
             },
-            media_storer: media::Storer::new({
-                match fs::create_dir(&image_dir) {
-                    Ok(_) => image_dir.as_path(),
-                    Err(e) => {
-                        return Err(StoreError::Fs {
-                            op: FsErrorOp::CreateDir,
-                            path: image_dir,
-                            source: e,
-                        })
-                    }
-                }
-            }),
-            media_loader: media::Loader::new(image_dir),
             root,
         })
     }
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, StoreError> {
-        let (root, media_dir) = {
+        let root = {
             let path = path.as_ref().canonicalize().map_err(|e| StoreError::Fs {
                 op: FsErrorOp::CanonicalizePath,
                 path: path.as_ref().to_path_buf(),
                 source: e,
             })?;
-            (path.join(WEBSITE), path.join(IMAGE_DIR))
+            path.join(WEBSITE)
         };
         let version = load_yaml(&root, || Version { major: 0, minor: 0 }, VERSION_FILE)?;
         if !VERSION.is_compatible(version) {
@@ -298,182 +297,83 @@ impl Store {
             version,
             objects: load_yaml(&root, ObjectInfo::default, OBJECT_INFO)?,
             dirty: false,
-            media_storer: media::Storer::new(&media_dir),
-            media_loader: media::Loader::new(media_dir),
             root,
         })
     }
-    pub fn migrate<P: AsRef<Path>>(path: P) -> Result<(), StoreError> {
-        let path = path.as_ref();
-        let version = load_yaml(path, || Version { major: 0, minor: 0 }, VERSION_FILE)?;
-        if version >= VERSION {
-            return Err(StoreError::Version(version));
-        }
-        const TYPE_LIST: [&'static str; 7] = [
-            Answer::TYPE,
-            Article::TYPE,
-            Collection::TYPE,
-            Column::TYPE,
-            Pin::TYPE,
-            Question::TYPE,
-            User::TYPE,
-        ];
-        for i in TYPE_LIST {
-            let path = path.join(i);
-            if !path.exists() {
-                continue;
-            }
-            for entry in path.read_dir().map_err(|e| StoreError::Fs {
-                op: FsErrorOp::OpenDir,
-                path: path.clone(),
+
+    fn migrate_item<I: HasId + BasicStoreItem + media::StoreImage>(
+        &self,
+        image_store: &PathBuf,
+        id: I::Id<'_>,
+    ) -> Result<(), MigrateError> {
+        let sp = self.store_path::<I>(id);
+        let item = I::load(&sp, Default::default()).map_err(|e| MigrateError::LoadObject {
+            kind: I::TYPE,
+            id: id.to_string(),
+            source: e,
+        })?;
+        item.migrate(image_store, sp)
+            .map_err(|e| MigrateError::Image {
+                kind: I::TYPE,
+                id: id.to_string(),
                 source: e,
-            })? {
-                let entry = entry.map_err(|e| StoreError::Fs {
-                    op: FsErrorOp::GetDirEntry,
-                    path: path.clone(),
-                    source: e,
-                })?;
-                let mut path = entry.path();
-                let tmp_path = path.with_file_name("info");
-                fs::rename(&path, &tmp_path).map_err(|e| StoreError::Fs {
-                    op: FsErrorOp::RenameTo(tmp_path.clone()),
-                    path: path.clone(),
-                    source: e,
-                })?;
-                fs::create_dir(&path).map_err(|e| StoreError::Fs {
-                    op: FsErrorOp::CreateDir,
-                    path: path.clone(),
-                    source: e,
-                })?;
-                path.push("info");
-                fs::rename(&tmp_path, &path).map_err(|e| StoreError::Fs {
-                    op: FsErrorOp::RenameTo(path),
-                    path: tmp_path,
-                    source: e,
-                })?;
+            })
+    }
+    pub fn migrate<P: AsRef<Path>>(path: P) -> Result<(), MigrateError> {
+        let mut store = Self::open(path).map_err(MigrateError::OpenStore)?;
+        if store.version != (Version { major: 1, minor: 0 }) {
+            return Err(MigrateError::Version(store.version));
+        }
+        let image_store = store.root.with_file_name("images");
+        for (id, info) in &store.objects.answer {
+            if info.container.in_store {
+                store.migrate_item::<item::Answer>(&image_store, *id)?;
             }
         }
-        #[derive(Debug, Default, Serialize, Deserialize)]
-        pub struct ObjectInfo {
-            pub(crate) answer: BTreeSet<AnswerId>,
-            pub(crate) article: BTreeSet<ArticleId>,
-            pub(crate) collection: BTreeSet<CollectionId>,
-            pub(crate) column: BTreeSet<ColumnId>,
-            pub(crate) pin: BTreeSet<PinId>,
-            pub(crate) question: BTreeSet<QuestionId>,
-            pub(crate) user: BTreeSet<UserId>,
+        for (id, info) in &store.objects.article {
+            if info.container.in_store {
+                store.migrate_item::<item::Article>(&image_store, *id)?;
+            }
         }
-        let old_info: ObjectInfo = load_yaml(&path, ObjectInfo::default, OBJECT_INFO)?;
-        let ii = info::ItemInfo {
-            in_store: true,
-            on_server: true,
-        };
-        store_yaml(
-            &info::Info {
-                answer: old_info
-                    .answer
-                    .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            info::Answer {
-                                container: ii,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-                article: old_info
-                    .article
-                    .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            info::Article {
-                                container: ii,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-                collection: old_info
-                    .collection
-                    .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            info::Collection {
-                                container: ii,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-                column: old_info
-                    .column
-                    .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            info::Column {
-                                container: ii,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-                comment: std::collections::BTreeMap::default(),
-                pin: old_info
-                    .pin
-                    .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            info::Pin {
-                                container: ii,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-                question: old_info
-                    .question
-                    .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            info::Question {
-                                container: ii,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-                user: old_info
-                    .user
-                    .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            info::User {
-                                container: ii,
-                                ..Default::default()
-                            },
-                        )
-                    })
-                    .collect(),
-            },
-            &path,
-            OBJECT_INFO,
-        )?;
-        store_yaml(&VERSION, path, VERSION_FILE)
+        for (id, info) in &store.objects.collection {
+            if info.container.in_store {
+                store.migrate_item::<item::Collection>(&image_store, *id)?;
+            }
+        }
+        for (id, info) in &store.objects.column {
+            if info.container.in_store {
+                store.migrate_item::<item::Column>(
+                    &image_store,
+                    item::column::ColumnRef(id.0.as_str()),
+                )?;
+            }
+        }
+        for (id, info) in &store.objects.comment {
+            if info.container.in_store {
+                store.migrate_item::<item::Comment>(&image_store, *id)?;
+            }
+        }
+        for (id, info) in &store.objects.pin {
+            if info.container.in_store {
+                store.migrate_item::<item::Pin>(&image_store, *id)?;
+            }
+        }
+        for (id, info) in &store.objects.question {
+            if info.container.in_store {
+                store.migrate_item::<item::Question>(&image_store, *id)?;
+            }
+        }
+        for (id, info) in &store.objects.user {
+            if info.container.in_store {
+                store.migrate_item::<item::User>(&image_store, item::user::StoreId(*id, ""))?;
+            }
+        }
+        store.version = VERSION;
+        store.save().map_err(MigrateError::SaveStore)
     }
 
     pub fn is_dirty(&self) -> bool {
         self.dirty
-    }
-    pub fn image_path(&self) -> PathBuf {
-        self.root.join(IMAGE_DIR)
     }
     pub fn root(&self) -> &PathBuf {
         &self.root
@@ -509,8 +409,11 @@ impl Store {
     ) -> Result<I, storable::Error> {
         I::load(self.store_path::<I>(id), load_opt)
     }
-    pub fn get_media<I: media::HasImage>(&mut self, object: &mut I) -> Result<(), media::Error> {
-        object.load_images(&mut self.media_loader)
+    pub fn get_media<I: HasId + media::StoreImage>(
+        &mut self,
+        object: &mut I,
+    ) -> Result<(), media::Error> {
+        object.load_images(self.store_path::<I>(object.id()))
     }
     pub fn get_container<O, I: HasId, IC: BasicStoreContainer<O, I>>(
         &self,
@@ -523,8 +426,11 @@ impl Store {
         )
     }
 
-    pub fn add_media<I: media::HasImage>(&mut self, data: &I) -> Result<(), media::Error> {
-        data.store_images(&mut self.media_storer)
+    pub fn add_media<I: HasId + media::StoreImage>(
+        &mut self,
+        data: &I,
+    ) -> Result<(), media::Error> {
+        data.store_images(self.store_path::<I>(data.id()))
     }
     pub fn add_object<I: BasicStoreItem>(
         &mut self,

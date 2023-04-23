@@ -13,7 +13,7 @@ use std::{
     fmt::Display,
     path::{Path, PathBuf},
 };
-use web_dl_base::{id::HasId, media::HasImage};
+use web_dl_base::{id::HasId, media::StoreImage};
 
 use super::ItemContainer;
 
@@ -36,7 +36,7 @@ impl<'a> Display for AnyId<'a> {
     }
 }
 
-#[derive(Debug, HasImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, HasContent, StoreImage, Serialize, Deserialize)]
 pub enum Any {
     Answer(
         #[has_image]

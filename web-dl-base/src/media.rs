@@ -3,20 +3,42 @@ use mime2ext::mime2ext;
 use mime_classifier::{ApacheBugFlag, LoadContext, MimeClassifier, NoSniffFlag};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, mem::MaybeUninit, rc::Rc};
-
-mod hash;
-pub use hash::HashDigest;
-
-mod store;
-pub use store::{Loader, RefSet, Storer};
-
+use std::{
+    fmt::Display,
+    fs, io,
+    mem::MaybeUninit,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
+#[derive(Debug)]
+pub enum FsErrorOp {
+    CreateDir,
+    WriteFile,
+    ReadFile,
+    Canonicalize,
+    HeadLinkTo(PathBuf),
+}
+impl Display for FsErrorOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CreateDir => f.write_str("create directory"),
+            Self::WriteFile => f.write_str("write file"),
+            Self::ReadFile => f.write_str("read file"),
+            Self::Canonicalize => f.write_str("canonicalize"),
+            Self::HeadLinkTo(p) => write!(f, "hard link to {} from", p.display()),
+        }
+    }
+}
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error(transparent)]
-    Store(#[from] store::Error),
+    #[error("failed to {op} {}", path.display())]
+    Fs {
+        op: FsErrorOp,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("failed to process {field}")]
     Chained {
         field: String,
@@ -25,103 +47,185 @@ pub enum Error {
     },
 }
 
-pub trait HasImage {
-    fn load_images(&mut self, loader: &mut Loader) -> Result<(), Error>;
-    fn store_images(&self, storer: &mut Storer) -> Result<(), Error>;
-    fn drop_images(&mut self);
-    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut RefSet<'b>)
+pub trait StoreImage {
+    fn load_images<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error>;
+    fn migrate<S, P>(&self, image_store: S, path: P) -> Result<(), Error>
     where
-        'b: 'a;
+        S: AsRef<Path>,
+        P: AsRef<Path>;
+    fn store_extension(&self) -> Option<&str> {
+        None
+    }
+    fn store_images<P: AsRef<Path>>(&self, path: P) -> Result<(), Error>;
+    fn drop_images(&mut self);
 }
-pub use web_dl_derive::HasImage;
+pub use web_dl_derive::StoreImage;
 
 #[doc(hidden)]
 /// private module, for derive macro only
 pub mod macro_export {
-    use super::{Error, HasImage, Loader, Storer};
-    use std::fmt::Display;
-    pub use std::{option::Option, result::Result, string::String};
+    use super::{Error, StoreImage};
+    pub use std::{convert::AsRef, option::Option, path::Path, result::Result, string::String};
+    use std::{fmt::Display, path::PathBuf};
 
-    pub fn load_img_chained<I: HasImage, C: Display>(
+    pub fn create_dir_missing<P: AsRef<Path>>(path: P) -> Result<(), Error> {
+        let path = path.as_ref();
+        if !path.exists() {
+            std::fs::create_dir_all(path).map_err(|e| Error::Fs {
+                op: super::FsErrorOp::CreateDir,
+                path: path.to_path_buf(),
+                source: e,
+            })
+        } else {
+            Ok(())
+        }
+    }
+    pub fn load_img_chained<I: StoreImage, P: AsRef<Path>, C: Display>(
         field: &mut I,
-        loader: &mut Loader,
+        path: P,
         context: C,
     ) -> Result<(), Error> {
-        field.load_images(loader).map_err(|e| Error::Chained {
+        field.load_images(path).map_err(|e| Error::Chained {
             field: context.to_string(),
             source: Box::new(e),
         })
     }
-    pub fn store_img_chained<I: HasImage, C: Display>(
+    pub fn with_extension<I: StoreImage>(field: &I, path: &Path, name: &str) -> PathBuf {
+        let mut path = path.join(name);
+        if let Some(ext) = field.store_extension() {
+            path.set_extension(ext);
+        }
+        path
+    }
+    pub fn migrate_img_chained<I, S, P, C>(
         field: &I,
-        storer: &mut Storer,
+        image_store: S,
+        path: P,
+        context: C,
+    ) -> Result<(), Error>
+    where
+        I: StoreImage,
+        S: AsRef<Path>,
+        P: AsRef<Path>,
+        C: Display,
+    {
+        field
+            .migrate(image_store, path)
+            .map_err(|e| Error::Chained {
+                field: context.to_string(),
+                source: Box::new(e),
+            })
+    }
+    pub fn store_img_chained<I: StoreImage, P: AsRef<Path>, C: Display>(
+        field: &I,
+        path: P,
         context: C,
     ) -> Result<(), Error> {
-        field.store_images(storer).map_err(|e| Error::Chained {
+        field.store_images(path).map_err(|e| Error::Chained {
             field: context.to_string(),
             source: Box::new(e),
         })
+    }
+}
+use macro_export::create_dir_missing;
+
+impl<I: StoreImage> StoreImage for Option<I> {
+    fn store_extension(&self) -> Option<&str> {
+        self.as_ref().and_then(|v| v.store_extension())
+    }
+    fn load_images<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+        match self {
+            Some(i) => i.load_images(path),
+            None => Ok(()),
+        }
+    }
+    fn migrate<S, P>(&self, image_store: S, path: P) -> Result<(), Error>
+    where
+        S: AsRef<Path>,
+        P: AsRef<Path>,
+    {
+        match self {
+            Some(i) => i.migrate(image_store, path),
+            None => Ok(()),
+        }
+    }
+    fn drop_images(&mut self) {
+        if let Some(i) = self {
+            i.drop_images()
+        }
+    }
+    fn store_images<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        match self {
+            Some(i) => i.store_images(path),
+            None => Ok(()),
+        }
+    }
+}
+impl<I: id::HasId + StoreImage> StoreImage for Vec<I> {
+    fn load_images<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
+        let path = path.as_ref();
+        for i in self.iter_mut() {
+            let id_str = i.id().to_string();
+            i.load_images(path.join(id_str.as_str()))
+                .map_err(|e| Error::Chained {
+                    field: id_str,
+                    source: Box::new(e),
+                })?;
+        }
+        Ok(())
+    }
+    fn migrate<S, P>(&self, image_store: S, path: P) -> Result<(), Error>
+    where
+        S: AsRef<Path>,
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        create_dir_missing(path)?;
+        let image_store = image_store.as_ref();
+        for i in self.iter() {
+            let id_str = i.id().to_string();
+            i.migrate(image_store, path.join(id_str.as_str()))
+                .map_err(|e| Error::Chained {
+                    field: id_str,
+                    source: Box::new(e),
+                })?;
+        }
+        Ok(())
+    }
+    fn store_images<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        let path = path.as_ref();
+        create_dir_missing(path)?;
+        for i in self.iter() {
+            let id_str = i.id().to_string();
+            i.store_images(path.join(id_str.as_str()))
+                .map_err(|e| Error::Chained {
+                    field: id_str,
+                    source: Box::new(e),
+                })?;
+        }
+        Ok(())
+    }
+    fn drop_images(&mut self) {
+        for i in self.iter_mut() {
+            i.drop_images()
+        }
     }
 }
 
-impl<I: HasImage> HasImage for Option<I> {
-    fn load_images(&mut self, loader: &mut Loader) -> Result<(), Error> {
-        match self {
-            Some(i) => i.load_images(loader),
-            None => Ok(()),
-        }
-    }
-    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut RefSet<'b>)
-    where
-        'b: 'a,
-    {
-        if let Some(i) = self {
-            i.image_refs(ref_set);
-        }
-    }
-    fn store_images(&self, storer: &mut Storer) -> Result<(), Error> {
-        match self {
-            Some(i) => i.store_images(storer),
-            None => Ok(()),
-        }
-    }
-    fn drop_images(&mut self) {
-        if let Some(v) = self {
-            v.drop_images();
-        }
-    }
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash, Serialize, Deserialize)]
+#[serde(tag = "algo", content = "hash")]
+pub enum HashDigest {
+    #[serde(rename = "sha256")]
+    Sha256(#[serde(with = "hex::serde")] [u8; 32]),
 }
-impl<I: id::HasId + HasImage> HasImage for Vec<I> {
-    fn load_images(&mut self, loader: &mut Loader) -> Result<(), Error> {
-        for i in self.iter_mut() {
-            i.load_images(loader).map_err(|e| Error::Chained {
-                field: i.id().to_string(),
-                source: Box::new(e),
-            })?;
-        }
-        Ok(())
-    }
-    fn store_images(&self, storer: &mut Storer) -> Result<(), Error> {
-        for i in self.iter() {
-            i.store_images(storer).map_err(|e| Error::Chained {
-                field: i.id().to_string(),
-                source: Box::new(e),
-            })?;
-        }
-        Ok(())
-    }
-    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut store::RefSet<'b>)
-    where
-        'b: 'a,
-    {
-        for i in self {
-            i.image_refs(ref_set)
-        }
-    }
-    fn drop_images(&mut self) {
-        for i in self.iter_mut() {
-            i.drop_images();
-        }
+impl HashDigest {
+    fn store_path(&self, parent: &Path, extension: &str) -> PathBuf {
+        let mut ret = parent.to_path_buf();
+        ret.push(match self {
+            Self::Sha256(h) => format!("sha256-{}", base16::encode_lower(h)),
+        });
+        ret.set_extension(extension);
+        ret
     }
 }
 
@@ -131,11 +235,13 @@ pub struct ImageRef {
     pub hash: HashDigest,
     pub extension: String,
     #[serde(skip)]
-    pub data: Option<Rc<[u8]>>,
+    pub data: Option<Box<[u8]>>,
 }
 impl Display for ImageRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("image {:#?}", self.hash))
+        match &self.hash {
+            HashDigest::Sha256(s) => write!(f, "sha256-{}.{}", hex::encode(s), self.extension),
+        }
     }
 }
 impl id::HasId for ImageRef {
@@ -145,26 +251,48 @@ impl id::HasId for ImageRef {
         self
     }
 }
-impl HasImage for ImageRef {
-    fn load_images(&mut self, loader: &mut store::Loader) -> Result<(), Error> {
+impl StoreImage for ImageRef {
+    fn store_extension(&self) -> Option<&str> {
+        Some(self.extension.as_str())
+    }
+    fn load_images<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         self.data = Some(
-            loader
-                .load(&self.hash, self.extension.as_str())
-                .map_err(Error::Store)?,
+            fs::read(path.as_ref())
+                .map_err(|e| Error::Fs {
+                    op: FsErrorOp::ReadFile,
+                    path: path.as_ref().to_path_buf(),
+                    source: e,
+                })?
+                .into_boxed_slice(),
         );
         Ok(())
     }
-    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut store::RefSet<'b>)
+    fn migrate<S, P>(&self, image_store: S, path: P) -> Result<(), Error>
     where
-        'b: 'a,
+        S: AsRef<Path>,
+        P: AsRef<Path>,
     {
-        ref_set.add_root(&self.hash, self.extension.as_str());
+        let sp = {
+            let sp = self.hash.store_path(image_store.as_ref(), &self.extension);
+            sp.as_path().canonicalize().map_err(|e| Error::Fs {
+                op: FsErrorOp::Canonicalize,
+                path: sp,
+                source: e,
+            })?
+        };
+        fs::hard_link(sp.as_path(), path.as_ref()).map_err(|e| Error::Fs {
+            op: FsErrorOp::HeadLinkTo(sp),
+            path: path.as_ref().to_path_buf(),
+            source: e,
+        })
     }
-    fn store_images(&self, storer: &mut store::Storer) -> Result<(), Error> {
+    fn store_images<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         match &self.data {
-            Some(d) => storer
-                .store(&self.hash, self.extension.as_str(), d)
-                .map_err(Error::Store),
+            Some(d) => fs::write(path.as_ref(), d).map_err(|e| Error::Fs {
+                op: FsErrorOp::WriteFile,
+                path: path.as_ref().to_path_buf(),
+                source: e,
+            }),
             None => Ok(()),
         }
     }
@@ -215,7 +343,7 @@ pub async fn fetch_image<P: progress::ImageProg>(
         ))
         .unwrap_or("unknown")
         .to_owned(),
-        data: Some(Rc::from(ret.into_boxed_slice())),
+        data: Some(ret.into_boxed_slice()),
     })
 }
 pub async fn fetch_images_iter<I, P>(client: &Client, images_prog: &mut P, imgs: I) -> Vec<ImageRef>
@@ -249,30 +377,38 @@ pub enum Image {
     #[serde(rename = "ref")]
     Ref(ImageRef),
 }
-impl HasImage for Image {
-    fn load_images(&mut self, loader: &mut store::Loader) -> Result<(), Error> {
+impl StoreImage for Image {
+    fn store_extension(&self) -> Option<&str> {
         match self {
-            Image::Ref(r) => r.load_images(loader),
-            Image::Url(_) => Ok(()),
+            Self::Ref(r) => r.store_extension(),
+            Self::Url(_) => None,
         }
     }
-    fn store_images(&self, storer: &mut store::Storer) -> Result<(), Error> {
+    fn load_images<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Error> {
         match self {
-            Image::Ref(r) => r.store_images(storer),
-            Image::Url(_) => Ok(()),
+            Self::Ref(r) => r.load_images(path),
+            Self::Url(_) => Ok(()),
         }
     }
-    fn image_refs<'a, 'b>(&'b self, ref_set: &'a mut store::RefSet<'b>)
+    fn migrate<S, P>(&self, image_store: S, path: P) -> Result<(), Error>
     where
-        'b: 'a,
+        S: AsRef<Path>,
+        P: AsRef<Path>,
     {
-        if let Self::Ref(r) = self {
-            r.image_refs(ref_set);
+        match self {
+            Self::Ref(r) => r.migrate(image_store, path),
+            Self::Url(_) => Ok(()),
         }
     }
     fn drop_images(&mut self) {
         if let Self::Ref(r) = self {
-            r.drop_images();
+            r.drop_images()
+        }
+    }
+    fn store_images<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        match self {
+            Self::Ref(r) => r.store_images(path),
+            Self::Url(_) => Ok(()),
         }
     }
 }

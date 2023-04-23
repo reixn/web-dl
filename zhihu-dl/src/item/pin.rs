@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::Cell, collections::HashSet, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
-    media::HasImage,
+    media::StoreImage,
     storable::Storable,
 };
 
@@ -34,7 +34,7 @@ impl OwnedId<Pin> for PinId {
 }
 
 pub const CONTENT_VERSION: Version = Version { major: 1, minor: 0 };
-#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, Storable, StoreImage, HasContent, Serialize, Deserialize)]
 pub struct PinContent {
     #[store(path(ext = "yaml"))]
     pub version: Version,
@@ -55,27 +55,27 @@ pub struct PinInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, Storable, StoreImage, HasContent, Serialize, Deserialize)]
 pub struct PinBody {
     #[store(path(ext = "yaml"))]
     pub info: PinInfo,
-    #[has_image(error = "pass_through")]
+    #[has_image]
     #[content(main)]
     pub content: PinContent,
 }
 
 pub const VERSION: Version = Version { major: 1, minor: 1 };
 
-#[derive(Debug, Storable, HasContent, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasContent, StoreImage, Serialize, Deserialize)]
 pub struct Pin {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[has_image]
     #[content(main)]
+    #[has_image(path = "flatten")]
     #[store(path = "flatten")]
     pub body: PinBody,
-    #[has_image]
     #[content]
+    #[has_image]
     pub repin: Option<PinBody>,
     #[store(raw_data)]
     pub raw_data: Option<RawData>,

@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 use std::{cell::Cell, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
-    media::{HasImage, Image},
+    media::{Image, StoreImage},
     storable::Storable,
 };
 
-pub const VERSION: Version = Version { major: 1, minor: 1 };
+pub const VERSION: Version = Version { major: 1, minor: 2 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ArticleId(pub u64);
@@ -37,13 +37,13 @@ impl OwnedId<Article> for ArticleId {
     }
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, StoreImage, Serialize, Deserialize)]
 #[store(format = "yaml")]
 pub struct ArticleInfo {
     pub id: ArticleId,
     pub title: String,
     pub author: Author,
-    #[has_image]
+    #[has_image(path = "dyn_extension")]
     pub cover: Option<Image>,
     #[serde(default = "comment::has_comment_default")]
     pub has_comment: Cell<bool>,
@@ -51,11 +51,11 @@ pub struct ArticleInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasContent, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasContent, StoreImage, Serialize, Deserialize)]
 pub struct Article {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[has_image(error = "pass_through")]
+    #[has_image(path = "flatten")]
     #[store(path(ext = "yaml"))]
     pub info: ArticleInfo,
     #[has_image]

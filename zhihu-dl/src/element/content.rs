@@ -13,7 +13,7 @@ use std::{
     fmt::Display,
 };
 use web_dl_base::{
-    media::{fetch_images_iter, HasImage, ImageRef},
+    media::{fetch_images_iter, ImageRef, StoreImage},
     storable::Storable,
 };
 
@@ -32,13 +32,13 @@ pub trait Convertor {
         dest: P,
     ) -> Result<(), Self::Err>;
 }
-pub mod convertor {
-    pub mod pandoc;
-}
+// pub mod convertor {
+//     pub mod pandoc;
+// }
 
 pub const VERSION: Version = Version { major: 1, minor: 1 };
 
-#[derive(Debug, Clone, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Clone, Storable, StoreImage, Serialize, Deserialize)]
 #[store(format = "yaml")]
 pub struct ContentInfo {
     pub is_empty: bool,
@@ -46,12 +46,12 @@ pub struct ContentInfo {
     pub images: Vec<ImageRef>,
 }
 
-#[derive(Debug, Clone, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Clone, Storable, StoreImage, Serialize, Deserialize)]
 pub struct Content {
     #[store(path(ext = "yaml"))]
     pub version: Version,
     #[store(path(ext = "yaml"))]
-    #[has_image(error = "pass_through")]
+    #[has_image(path = "flatten")]
     pub info: ContentInfo,
     #[store(path(ext = "ron"))]
     pub document: Option<document::Document>,

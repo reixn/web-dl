@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::Cell, collections::BTreeSet, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
-    media::HasImage,
+    media::StoreImage,
     storable::Storable,
 };
 
@@ -49,7 +49,7 @@ pub struct QuestionInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, Storable, StoreImage, HasContent, Serialize, Deserialize)]
 pub struct Question {
     #[store(path(ext = "yaml"))]
     pub version: Version,

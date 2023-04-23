@@ -40,7 +40,7 @@ impl<Id: Args> ContainerOper<Id> {
         prog: &ProgressReporter,
     ) -> Result<(), anyhow::Error>
     where
-        I: Item + media::HasImage + store::StoreItem,
+        I: Item + media::StoreImage + store::StoreItem,
         Id: OwnedId<IC>,
         IC: ItemContainer<O, I>,
     {

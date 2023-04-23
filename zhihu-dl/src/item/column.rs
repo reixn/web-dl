@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, collections::BTreeSet, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
-    media::{HasImage, Image},
+    media::{Image, StoreImage},
     storable::Storable,
 };
 
@@ -38,24 +38,24 @@ impl Borrow<str> for ColumnId {
     }
 }
 
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, StoreImage, Serialize, Deserialize)]
 #[store(format = "yaml")]
 pub struct ColumnInfo {
     pub id: ColumnId,
     pub title: String,
     pub author: Author,
-    #[has_image]
+    #[has_image(path = "dyn_extension")]
     pub image: Option<Image>,
     pub created_time: DateTime<FixedOffset>,
     pub updated_time: DateTime<FixedOffset>,
 }
 
-const VERSION: Version = Version { major: 1, minor: 0 };
-#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
+const VERSION: Version = Version { major: 1, minor: 1 };
+#[derive(Debug, Storable, StoreImage, HasContent, Serialize, Deserialize)]
 pub struct Column {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[has_image(error = "pass_through")]
+    #[has_image(path = "flatten")]
     #[store(path(ext = "yaml"))]
     pub info: ColumnInfo,
     #[has_image]

@@ -13,12 +13,12 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fmt::Display};
 use web_dl_base::{
     id::HasId,
-    media::{HasImage, Image},
+    media::{Image, StoreImage},
     storable::Storable,
 };
 
 const VERSION: Version = Version { major: 1, minor: 0 };
-#[derive(Debug, Storable, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, StoreImage, Serialize, Deserialize)]
 #[store(format = "yaml")]
 pub struct UserInfo {
     pub id: UserId,
@@ -26,17 +26,17 @@ pub struct UserInfo {
     pub name: String,
     pub url_token: String,
     pub headline: String,
-    #[has_image]
+    #[has_image(path = "dyn_extension")]
     pub avatar: Image,
-    #[has_image]
+    #[has_image(path = "dyn_extension")]
     pub cover: Option<Image>,
 }
 
-#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, Storable, StoreImage, HasContent, Serialize, Deserialize)]
 pub struct User {
     #[store(path(ext = "yaml"))]
     pub version: Version,
-    #[has_image(error = "pass_through")]
+    #[has_image(path = "flatten")]
     #[store(path(ext = "yaml"))]
     pub info: UserInfo,
     #[has_image]

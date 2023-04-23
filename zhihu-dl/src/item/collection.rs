@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::Cell, fmt::Display, str::FromStr};
 use web_dl_base::{
     id::{HasId, OwnedId},
-    media::HasImage,
+    media::StoreImage,
     storable::Storable,
 };
 
@@ -47,8 +47,8 @@ pub struct CollectionInfo {
     pub updated_time: DateTime<FixedOffset>,
 }
 
-pub const VERSION: Version = Version { major: 1, minor: 1 };
-#[derive(Debug, Storable, HasImage, HasContent, Serialize, Deserialize)]
+pub const VERSION: Version = Version { major: 1, minor: 2 };
+#[derive(Debug, Storable, StoreImage, HasContent, Serialize, Deserialize)]
 pub struct Collection {
     #[store(path(ext = "yaml"))]
     pub version: Version,

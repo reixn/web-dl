@@ -8,7 +8,6 @@ use std::{
 use web_dl_base::{id::OwnedId, media, storable};
 use zhihu_dl::{
     driver::Driver,
-    element::content,
     item::{Answer, Article, Collection, Column, Fetchable, Item, Pin, Question, User},
     progress::{progress_bar::ProgressReporter, ItemJob, Reporter},
     store::{self, StoreItem},
@@ -49,14 +48,6 @@ pub enum ItemOper<Id: Args> {
         #[command(flatten)]
         id: Id,
     },
-    Convert {
-        #[command(flatten)]
-        id: Id,
-        #[arg(long,value_hint=clap::ValueHint::AnyPath)]
-        dest: String,
-        #[command(subcommand)]
-        operation: ConvertOper,
-    },
 }
 
 fn error_msg<I: Item, Id: Display>(oper: &str, id: Id, opt: fmt::Arguments<'_>) -> String {
@@ -75,7 +66,7 @@ async fn add_raw<I>(
     path: &String,
 ) -> anyhow::Result<()>
 where
-    I: Item + media::HasImage + store::BasicStoreItem,
+    I: Item + media::StoreImage + store::BasicStoreItem,
 {
     let p = prog.start_item::<&str, _>("Adding", "raw data of ", I::TYPE, path, None);
     let v = driver
@@ -101,7 +92,7 @@ fn check_driver(driver: &Driver) -> Result<(), anyhow::Error> {
 impl<Id: Args> ItemOper<Id> {
     async fn run<I>(self, driver: &mut Driver, prog: &ProgressReporter) -> Result<(), anyhow::Error>
     where
-        I: Fetchable + Item + media::HasImage + store::BasicStoreItem,
+        I: Fetchable + Item + media::StoreImage + store::BasicStoreItem,
         Id: OwnedId<I>,
     {
         match self {
@@ -170,52 +161,6 @@ impl<Id: Args> ItemOper<Id> {
                             .context("failed to store object")
                     })
                     .with_context(|| error_msg::<I, _>("convert raw html", id, format_args!("")))?;
-                p.finish("Converted", id);
-            }
-            ItemOper::Convert {
-                id,
-                dest,
-                operation: ConvertOper::Pandoc { format },
-            } => {
-                let id = id.to_id();
-                let p = prog.start_item(
-                    "Convert",
-                    "document of ",
-                    I::TYPE,
-                    id,
-                    Some(format_args!("(using pandoc, {}) to {}", format, dest)),
-                );
-                let v: Result<(), anyhow::Error> = try {
-                    let obj = driver
-                        .store
-                        .get_object::<I>(id, storable::LoadOpt::default())
-                        .context("failed to load object")?;
-                    obj.get_main_content()
-                        .context("can't find document")
-                        .and_then(|d| d.document.as_ref().context("can't find document tree"))
-                        .and_then(|d| {
-                            use content::{
-                                convertor::pandoc::{Pandoc, PandocConfig},
-                                Convertor,
-                            };
-                            Pandoc::convert(
-                                driver.store.image_path(),
-                                d,
-                                &PandocConfig {
-                                    format: format.as_str(),
-                                },
-                                dest.as_str(),
-                            )
-                            .map_err(anyhow::Error::new)
-                        })?;
-                };
-                v.with_context(|| {
-                    error_msg::<I, _>(
-                        "convert document of ",
-                        id,
-                        format_args!("(using pandoc, {}) to {}", format, dest),
-                    )
-                })?;
                 p.finish("Converted", id);
             }
         }

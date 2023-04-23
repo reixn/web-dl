@@ -12,9 +12,9 @@ use crate::{
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 use std::{cell::Cell, fmt::Display, str::FromStr};
-use web_dl_base::{id::HasId, media::HasImage, storable::Storable};
+use web_dl_base::{id::HasId, media::StoreImage, storable::Storable};
 
-pub const VERSION: Version = Version { major: 2, minor: 0 };
+pub const VERSION: Version = Version { major: 2, minor: 1 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct CommentId(pub u64);
@@ -49,7 +49,7 @@ pub struct CommentInfo {
     pub created_time: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Storable, HasContent, HasImage, Serialize, Deserialize)]
+#[derive(Debug, Storable, HasContent, StoreImage, Serialize, Deserialize)]
 pub struct Comment {
     #[store(path(ext = "yaml"))]
     pub version: Version,

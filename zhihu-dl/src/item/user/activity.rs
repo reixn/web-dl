@@ -23,7 +23,7 @@ use std::{
     fmt::Display,
     path::{Path, PathBuf},
 };
-use web_dl_base::{id::HasId, media::HasImage};
+use web_dl_base::{id::HasId, media::StoreImage};
 
 type Id<'a, S> = <S as HasId>::Id<'a>;
 
@@ -63,7 +63,7 @@ impl<'a> Display for ActivityId<'a> {
     }
 }
 
-#[derive(Debug, HasImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, StoreImage, HasContent, Serialize, Deserialize)]
 pub enum ActTarget {
     Answer(
         #[has_image]
@@ -122,10 +122,10 @@ pub struct Reply {
     target: TargetReply,
 }
 
-#[derive(Debug, HasImage, HasContent, Serialize, Deserialize)]
+#[derive(Debug, StoreImage, HasContent, Serialize, Deserialize)]
 pub struct Activity {
     pub id: u64,
-    #[has_image(error = "pass_through")]
+    #[has_image(path = "flatten")]
     #[content(main)]
     pub target: ActTarget,
 }
