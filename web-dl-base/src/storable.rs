@@ -77,7 +77,7 @@ pub struct LoadOpt {
     pub load_raw: bool,
 }
 
-pub trait Storable: Sized {
+pub trait Storable: Sized + serde::Serialize + serde::de::DeserializeOwned {
     fn load<P: AsRef<Path>>(path: P, load_opt: LoadOpt) -> Result<Self, Error>;
     fn store<P: AsRef<Path>>(&self, path: P) -> Result<(), Error>;
 }
