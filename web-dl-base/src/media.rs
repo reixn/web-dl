@@ -1,4 +1,4 @@
-use crate::{id, progress};
+use crate::{id, progress, util};
 use mime2ext::mime2ext;
 use mime_classifier::{ApacheBugFlag, LoadContext, MimeClassifier, NoSniffFlag};
 use reqwest::{Client, Url};
@@ -216,7 +216,7 @@ impl<I: id::HasId + StoreImage> StoreImage for Vec<I> {
 #[serde(tag = "algo", content = "hash")]
 pub enum HashDigest {
     #[serde(rename = "sha256")]
-    Sha256(#[serde(with = "hex::serde")] [u8; 32]),
+    Sha256(#[serde(with = "util::serde::byte_array::hex")] [u8; 32]),
 }
 impl HashDigest {
     fn store_path(&self, parent: &Path, extension: &str) -> PathBuf {
@@ -234,7 +234,7 @@ pub struct ImageRef {
     pub url: String,
     pub hash: HashDigest,
     pub extension: String,
-    #[serde(skip)]
+    #[serde(default, with = "util::serde::bytes::if_readable")]
     pub data: Option<Box<[u8]>>,
 }
 impl Display for ImageRef {

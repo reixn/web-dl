@@ -7,6 +7,7 @@ use std::{
     fmt::{Debug, Display},
     str::FromStr,
 };
+use web_dl_base::util;
 
 pub const VERSION: Version = Version { major: 1, minor: 1 };
 
@@ -35,7 +36,7 @@ impl<'de> Deserialize<'de> for FromRaw<UserType> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct UserId(#[serde(with = "hex::serde")] pub [u8; 16]);
+pub struct UserId(#[serde(with = "util::serde::byte_array::hex")] pub [u8; 16]);
 impl Debug for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(hex::encode(&self.0).as_str())

@@ -22,3 +22,4 @@ thiserror = "1.0.40"
 ron = "0.8.0"
 anyhow = "1.0.70"
 hex = { version = "0.4.3", features = ["serde"] }
+serde_bytes = "0.11.9"
