@@ -1,4 +1,3 @@
-use core::slice;
 use md5::{Digest, Md5};
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use std::{array::from_fn, mem::MaybeUninit};
@@ -30,7 +29,7 @@ fn g(e: u32) -> u32 {
     let r = u32::from_be_bytes(e.to_be_bytes().map(|i| H_ZB[i as usize]));
     r ^ q(r, 2) ^ q(r, 10) ^ q(r, 18) ^ q(r, 24)
 }
-fn g_r(e: &[u8; 16], dest: &mut [MaybeUninit<u8>]) {
+fn g_r(e: &[u8; 16], dest: &mut [MaybeUninit<u8>; 16]) {
     const H_ZK: [u32; 32] = [
         0x45c62932, 0x3d15f2fe, 0x5442e14f, 0xeb8921c0, 0xd256542e, 0xae28cbde, 0xf7782b08,
         0xee48a883, 0x733e8d1a, 0xc61cdffb, 0xe7c6016a, 0x1b713876, 0xdf5eeb0a, 0x8f44a6ca,
@@ -62,20 +61,16 @@ fn g_r(e: &[u8; 16], dest: &mut [MaybeUninit<u8>]) {
     MaybeUninit::write_slice(&mut dest[8..12], &n[33].to_be_bytes());
     MaybeUninit::write_slice(&mut dest[12..16], &n[32].to_be_bytes());
 }
-fn g_x(e: &[u8], t: &[u8], dest: &mut [MaybeUninit<u8>]) {
-    let mut v: [MaybeUninit<u8>; 16] = MaybeUninit::uninit_array();
-    for i in 0..16 {
-        v[i].write(e[i] ^ t[i]);
-    }
-    let mut v = unsafe { MaybeUninit::array_assume_init(v) };
-    g_r(&v, dest);
+fn g_x(e: &[u8; 32], t: &[u8; 16], dest: &mut [MaybeUninit<u8>; 32]) {
+    let mut v: [u8; 16] = from_fn(|i| e[i] ^ t[i]);
+    g_r(&v, (&mut dest[0..16]).try_into().unwrap());
     for i in 0..16 {
         v[i] = e[i + 16] ^ unsafe { dest[i].assume_init() };
     }
-    g_r(&v, &mut dest[16..32]);
+    g_r(&v, (&mut dest[16..32]).try_into().unwrap());
 }
 
-fn encode_zse96(d: &[u8]) -> String {
+fn encode_zse96(d: &[u8; 16]) -> String {
     let l53: [u8; 48] = {
         let mut l50: [MaybeUninit<u8>; 48] = MaybeUninit::uninit_array();
         l50[0].write(63);
@@ -102,15 +97,17 @@ fn encode_zse96(d: &[u8]) -> String {
                 let l34 = &l50[0..16];
                 from_fn::<u8, 16, _>(|i| l34[i] ^ TABLE[i] ^ 42)
             },
-            &mut ret[0..16],
+            (&mut ret[0..16]).try_into().unwrap(),
         );
         let (l36, l39) = unsafe {
             (
-                MaybeUninit::slice_assume_init_ref(slice::from_raw_parts(ret.as_ptr(), 16)),
-                slice::from_raw_parts_mut(ret[16..].as_mut_ptr(), 32),
+                (ret.as_ptr() as *const [u8; 16]).as_ref().unwrap(),
+                (ret[16..].as_mut_ptr() as *mut [MaybeUninit<u8>; 32])
+                    .as_mut()
+                    .unwrap(),
             )
         };
-        g_x(&l50[16..], l36, l39);
+        g_x((&l50[16..48]).try_into().unwrap(), l36, l39);
 
         unsafe { MaybeUninit::array_assume_init(ret) }
     };
@@ -163,7 +160,7 @@ impl super::Signer for Zse96V3 {
                 .unwrap()
                 .value(),
         );
-        let enc = encode_zse96(&dig.finalize()[..]);
+        let enc = encode_zse96(&dig.finalize().into());
         log::debug!("request {} signature: {}", url, enc);
         client
             .http_client
