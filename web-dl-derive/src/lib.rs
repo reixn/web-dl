@@ -1,4 +1,3 @@
-#![feature(iterator_try_collect)]
 use proc_macro::TokenStream;
 
 mod media;

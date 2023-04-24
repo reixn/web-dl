@@ -1,5 +1,4 @@
 #![feature(format_args_nl)]
-#![feature(try_blocks)]
 
 use anyhow::Context;
 use clap::{FromArgMatches, Parser, Subcommand, ValueEnum};

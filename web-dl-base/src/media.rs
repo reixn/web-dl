@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     fs, io,
-    mem::MaybeUninit,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -321,11 +320,7 @@ pub async fn fetch_image<P: progress::ImageProg>(
         ret.extend_from_slice(&s);
         dig.update(&s);
     }
-    let hsh = {
-        let mut buf: [MaybeUninit<u8>; 32] = MaybeUninit::uninit_array();
-        MaybeUninit::write_slice(&mut buf, dig.finalize().as_ref());
-        unsafe { MaybeUninit::array_assume_init(buf) }
-    };
+    let hsh = dig.finalize().into();
     log::debug!(
         "fetched image {}, sha256: {}",
         url_str,
