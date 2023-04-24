@@ -6,3 +6,7 @@ members = [
   "zhihu-dl",
   "zhihu-dl-cli",
 ]
+
+[profile.release-lto]
+inherits = "release"
+lto = true
