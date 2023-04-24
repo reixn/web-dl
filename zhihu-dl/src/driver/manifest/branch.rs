@@ -55,7 +55,7 @@ impl Driver {
         prog: &P,
         name: N,
         id: I::Id<'_>,
-        path: &PathBuf,
+        path: &Path,
     ) -> Result<(), Error> {
         let mut path = path.join(I::TYPE);
         path.push(name.to_string());

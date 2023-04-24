@@ -216,7 +216,7 @@ impl HasContent for Content {
     }
 }
 
-impl<'a, I: HasContent> HasContent for Vec<I> {
+impl<I: HasContent> HasContent for Vec<I> {
     fn is_html_converted(&self) -> bool {
         self.iter().all(I::is_html_converted)
     }

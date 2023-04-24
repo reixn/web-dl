@@ -157,7 +157,7 @@ impl super::Driver {
         let leaves = manifest.merged_leaf();
         self.apply_manifest_leaf(prog, &{
             let mut missing = leaves.clone();
-            missing.diff(&load_leaves(&dest.as_ref())?);
+            missing.diff(&load_leaves(dest.as_ref())?);
             missing
         })
         .await

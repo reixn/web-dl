@@ -396,7 +396,7 @@ impl<'a> Container<'a> {
             kind: IC::TYPE,
             item_kind: II::TYPE,
             option_name: IC::OPTION_NAME,
-            option: option,
+            option,
         }
     }
     fn link<II, IO, IC, I, P>(multi_progress: &'a MultiProgress, id: I, dest: P)

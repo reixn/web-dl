@@ -613,7 +613,7 @@ impl<'a, 'b, IC: 'a + BasicStoreContainer<O, I>, O, I: StoreItem + 'static> Cont
     fn link_item(&mut self, id: I::Id<'_>) -> Result<(), StoreError> {
         self.item_list.insert(id);
         self.absent_list.remove(id);
-        if let Some(v) = I::link_info(id, &self.store, &self.root) {
+        if let Some(v) = I::link_info(id, self.store, &self.root) {
             if v.link.exists() {
                 return Ok(());
             }

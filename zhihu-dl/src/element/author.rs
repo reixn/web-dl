@@ -39,12 +39,12 @@ impl<'de> Deserialize<'de> for FromRaw<UserType> {
 pub struct UserId(#[serde(with = "util::serde::byte_array::hex")] pub [u8; 16]);
 impl Debug for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(hex::encode(&self.0).as_str())
+        f.write_str(hex::encode(self.0).as_str())
     }
 }
 impl Display for UserId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(hex::encode(&self.0).as_str())
+        f.write_str(hex::encode(self.0).as_str())
     }
 }
 impl FromStr for UserId {
