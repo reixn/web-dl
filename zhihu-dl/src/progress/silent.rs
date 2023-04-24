@@ -24,47 +24,7 @@ impl ImagesProg for Silent {
     fn skip(&mut self) {}
 }
 
-impl CommentProg for Silent {
-    type ChildRep<'a> = Silent;
-    fn start_child(&self) -> Self::ChildRep<'_> {
-        Silent
-    }
-
-    type ImagesRep<'a> = Silent;
-    fn start_images(&self, _: u64) -> Self::ImagesRep<'_> {
-        Silent
-    }
-}
-impl CommentsProg for Silent {
-    type CommentRep<'a> = Silent;
-    fn start_comment<I: Display>(&mut self, _: I) -> Self::CommentRep<'_> {
-        Silent
-    }
-    fn skip_comment(&mut self) {}
-}
-impl CommentTreeProg for Silent {
-    type FetchRep<'a> = Silent;
-    fn start_fetch_root(&self) -> Self::FetchRep<'_> {
-        Silent
-    }
-
-    type FetchMissingRep<'a> = Silent;
-    fn start_fetch_missing(&self) -> Self::FetchMissingRep<'_> {
-        Silent
-    }
-
-    type CommentsRep<'a> = Silent;
-    fn start_comments(&self, _: u64) -> Self::CommentsRep<'_> {
-        Silent
-    }
-}
-
 impl ItemProg for Silent {
-    type CommentTreeRep<'a> = Silent;
-    fn start_comment_tree(&self) -> Self::CommentTreeRep<'_> {
-        Silent
-    }
-
     type ImagesRep<'a> = Silent;
     fn start_images(&self, _: u64) -> Self::ImagesRep<'_> {
         Silent

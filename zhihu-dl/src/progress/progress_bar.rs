@@ -119,74 +119,6 @@ impl<'a> Progress for SubWrapper<'a> {
     }
 }
 
-impl<'a> CommentProg for SubWrapper<'a> {
-    type ChildRep<'b> = SubProgress<'b> where Self:'a+'b;
-    fn start_child(&self) -> Self::ChildRep<'_> {
-        SubProgress {
-            multi_progress: self.0,
-            progress_bar: self
-                .0
-                .add(ProgressBar::new_spinner().with_message("fetching child comments")),
-        }
-    }
-
-    type ImagesRep<'b> = SubProgress<'b> where Self:'a+'b;
-    fn start_images(&self, count: u64) -> Self::ImagesRep<'_> {
-        SubProgress {
-            multi_progress: self.0,
-            progress_bar: self
-                .0
-                .add(ProgressBar::new(count).with_style(DEFAULT_BAR_STYLE.clone())),
-        }
-    }
-}
-impl<'a> CommentsProg for SubProgress<'a> {
-    type CommentRep<'b> = SubWrapper<'b> where Self:'a+'b;
-    fn start_comment<I: Display>(&mut self, id: I) -> Self::CommentRep<'_> {
-        self.progress_bar.inc(1);
-        self.progress_bar
-            .set_message(format!("processing comment {}", id));
-        SubWrapper(self.multi_progress)
-    }
-    fn skip_comment(&mut self) {
-        self.progress_bar.inc(1);
-        self.progress_bar.set_message("processing comment");
-    }
-}
-impl<'a> CommentTreeProg for SubWrapper<'a> {
-    type FetchRep<'b> = SubProgress<'b> where Self:'a+'b;
-    fn start_fetch_root(&self) -> Self::FetchRep<'_> {
-        SubProgress {
-            multi_progress: self.0,
-            progress_bar: self
-                .0
-                .add(ProgressBar::new_spinner().with_message("getting root comments")),
-        }
-    }
-
-    type FetchMissingRep<'b> = SubProgress<'b> where Self:'a+'b;
-    fn start_fetch_missing(&self) -> Self::FetchMissingRep<'_> {
-        let pb = self
-            .0
-            .add(ProgressBar::new_spinner().with_message("fetching missing comments"));
-        pb.enable_steady_tick(TICK_INTERVAL);
-        SubProgress {
-            multi_progress: self.0,
-            progress_bar: pb,
-        }
-    }
-
-    type CommentsRep<'b> = SubProgress<'b> where Self:'a+'b;
-    fn start_comments(&self, count: u64) -> Self::CommentsRep<'_> {
-        SubProgress {
-            multi_progress: self.0,
-            progress_bar: self
-                .0
-                .add(ProgressBar::new(count).with_style(DEFAULT_BAR_STYLE.clone())),
-        }
-    }
-}
-
 fn item_start_images(prog: &MultiProgress, count: u64) -> SubProgress<'_> {
     SubProgress {
         multi_progress: prog,
@@ -194,11 +126,6 @@ fn item_start_images(prog: &MultiProgress, count: u64) -> SubProgress<'_> {
     }
 }
 impl<'a> ItemProg for SubWrapper<'a> {
-    type CommentTreeRep<'b> = SubWrapper<'b> where Self:'a+'b;
-    fn start_comment_tree(&self) -> Self::CommentTreeRep<'_> {
-        SubWrapper(self.0)
-    }
-
     type ImagesRep<'b> = SubProgress<'b> where Self:'a+'b;
     fn start_images(&self, count: u64) -> Self::ImagesRep<'_> {
         item_start_images(self.0, count)
@@ -318,11 +245,6 @@ impl<'a> Progress for Item<'a> {
     }
 }
 impl<'a> ItemProg for Item<'a> {
-    type CommentTreeRep<'b> = SubWrapper<'b>
-        where Self:'a+'b;
-    fn start_comment_tree(&self) -> Self::CommentTreeRep<'_> {
-        SubWrapper(self.multi_progress)
-    }
     type ImagesRep<'b> = SubProgress<'b>
         where Self:'a+'b;
     fn start_images(&self, count: u64) -> Self::ImagesRep<'_> {
