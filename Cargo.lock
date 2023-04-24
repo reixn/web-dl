@@ -2472,7 +2472,6 @@ name = "web_dl_base"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "base16",
  "hex",
  "log",
  "mime2ext",

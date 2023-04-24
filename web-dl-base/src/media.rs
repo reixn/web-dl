@@ -221,7 +221,7 @@ impl HashDigest {
     fn store_path(&self, parent: &Path, extension: &str) -> PathBuf {
         let mut ret = parent.to_path_buf();
         ret.push(match self {
-            Self::Sha256(h) => format!("sha256-{}", base16::encode_lower(h)),
+            Self::Sha256(h) => format!("sha256-{}", hex::encode(h)),
         });
         ret.set_extension(extension);
         ret
@@ -321,11 +321,7 @@ pub async fn fetch_image<P: progress::ImageProg>(
         dig.update(&s);
     }
     let hsh = dig.finalize().into();
-    log::debug!(
-        "fetched image {}, sha256: {}",
-        url_str,
-        base16::encode_lower(&hsh)
-    );
+    log::debug!("fetched image {}, sha256: {}", url_str, hex::encode(&hsh));
     Ok(ImageRef {
         url: url_str,
         hash: HashDigest::Sha256(hsh),
