@@ -14,10 +14,6 @@ pub mod if_readable {
     pub fn deserialize<'de, T: serde_bytes::Deserialize<'de>, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<T>, D::Error> {
-        if deserializer.is_human_readable() {
-            Ok(None)
-        } else {
-            serde_bytes::deserialize(deserializer)
-        }
+        serde_bytes::deserialize(deserializer)
     }
 }
