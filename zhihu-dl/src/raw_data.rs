@@ -93,7 +93,7 @@ impl<'de> Deserialize<'de> for FromRaw<Image> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, std::marker::ConstParamTy, Serialize, Deserialize)]
 pub enum Container {
     None,
     Activity,

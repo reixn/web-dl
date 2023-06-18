@@ -2,7 +2,7 @@ use serde::{de, Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 use web_dl_base::storable::Storable;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Storable, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, std::marker::ConstParamTy, Storable, Serialize, Deserialize)]
 #[store(format = "yaml")]
 pub struct Version {
     pub major: u32,

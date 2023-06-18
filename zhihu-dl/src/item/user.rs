@@ -211,7 +211,7 @@ impl BasicStoreContainer<super::VoidOpt, super::column::Column> for User {
     type ItemList = BTreeSet<super::column::ColumnId>;
     container_info!(column);
 }
-impl<'b> super::ItemContainer<super::VoidOpt, super::column::Column> for User {
+impl super::ItemContainer<super::VoidOpt, super::column::Column> for User {
     async fn fetch_items<'a, P: crate::progress::ItemContainerProg>(
         client: &crate::request::Client,
         prog: &P,

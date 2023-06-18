@@ -3,7 +3,6 @@
 #![feature(maybe_uninit_uninit_array)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_write_slice)]
-#![feature(btree_drain_filter)]
 #![allow(incomplete_features)]
 
 pub mod element {

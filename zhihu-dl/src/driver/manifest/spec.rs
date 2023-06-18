@@ -67,12 +67,12 @@ impl<K: Ord, V: ConfValue> ConfValue for BTreeMap<K, V> {
         }
     }
     fn diff(&mut self, other: &Self) {
-        self.drain_filter(|k, v| match other.get(k) {
+        self.retain(|k, v| match other.get(k) {
             Some(v2) => {
                 v.diff(v2);
-                *v == Default::default()
+                *v != Default::default()
             }
-            None => false,
+            None => true,
         });
     }
 }
